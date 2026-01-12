@@ -53,3 +53,4 @@ python-dateutil==2.8.2
 playwright==1.49.1
 beautifulsoup4==4.12.3
 aiofiles==23.2.1
+email-validator==2.1.0
