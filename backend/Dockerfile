@@ -49,7 +49,8 @@ ENV PATH=/root/.local/bin:$PATH
 COPY . .
 
 # Install Playwright browsers (required for search functionality)
-RUN playwright install chromium --with-deps
+# Note: System dependencies are already installed above, so we don't need --with-deps
+RUN playwright install chromium
 
 # Expose port
 EXPOSE 8001
