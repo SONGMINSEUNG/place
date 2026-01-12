@@ -7,8 +7,8 @@ import {
   LayoutDashboard,
   Search,
   TrendingUp,
-  FileText,
-  Settings,
+  // FileText,  // TODO: reports 페이지 구현 후 사용
+  // Settings,  // TODO: settings 페이지 구현 후 사용
   LogOut,
   BarChart2,
   User,
@@ -21,8 +21,9 @@ const menuItems = [
   { href: "/", label: "대시보드", icon: LayoutDashboard },
   { href: "/inquiry", label: "순위 조회", icon: Search },
   { href: "/tracking", label: "순위 추적", icon: TrendingUp },
-  { href: "/reports", label: "리포트", icon: FileText },
-  { href: "/settings", label: "설정", icon: Settings },
+  // TODO: 아래 라우트들은 페이지 구현 후 활성화
+  // { href: "/reports", label: "리포트", icon: FileText },
+  // { href: "/settings", label: "설정", icon: Settings },
 ];
 
 export function Sidebar() {
