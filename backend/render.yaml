@@ -1,0 +1,38 @@
+# Render Blueprint specification
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: place-analytics-api
+    runtime: docker
+    repo: https://github.com/YOUR_USERNAME/place-analytics
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "false"
+      - key: ALLOWED_ORIGINS
+        sync: false  # Set manually: https://your-frontend.vercel.app,https://your-domain.com
+      - key: DATABASE_URL
+        sync: false  # Set manually: Supabase PostgreSQL connection string
+      # Naver API Keys (Optional)
+      - key: NAVER_CLIENT_ID
+        sync: false
+      - key: NAVER_CLIENT_SECRET
+        sync: false
+      - key: NAVER_AD_API_KEY
+        sync: false
+      - key: NAVER_AD_SECRET_KEY
+        sync: false
+      - key: NAVER_AD_CUSTOMER_ID
+        sync: false
+    healthCheckPath: /health
+    plan: free
+
+# Note: DATABASE_URL format for Supabase
+# postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
+# The code automatically converts this to postgresql+asyncpg:// for async support
