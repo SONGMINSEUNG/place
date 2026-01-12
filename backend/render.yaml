@@ -19,7 +19,13 @@ services:
         sync: false  # Set manually: https://your-frontend.vercel.app,https://your-domain.com
       - key: DATABASE_URL
         sync: false  # Set manually: Supabase PostgreSQL connection string
-      # Naver API Keys (Optional)
+      # Proxy Settings (Recommended for avoiding IP blocks)
+      # Format: http://username:password@proxy.example.com:8080
+      - key: PROXY_URL
+        sync: false  # Set manually: Proxy URL for Naver crawling
+      - key: ADLOG_PROXY_URL
+        sync: false  # Set manually: Proxy URL for ADLOG API (optional, uses PROXY_URL if not set)
+      # Naver API Keys (Optional - for DataLab trends)
       - key: NAVER_CLIENT_ID
         sync: false
       - key: NAVER_CLIENT_SECRET
@@ -31,7 +37,7 @@ services:
       - key: NAVER_AD_CUSTOMER_ID
         sync: false
     healthCheckPath: /health
-    plan: free
+    plan: free  # Note: Free plan may have memory limits for Playwright
 
 # Note: DATABASE_URL format for Supabase
 # postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres

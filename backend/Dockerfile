@@ -48,8 +48,8 @@ ENV PATH=/root/.local/bin:$PATH
 # Copy application code
 COPY . .
 
-# Install Playwright browsers (optional, comment out if not needed)
-# RUN playwright install chromium
+# Install Playwright browsers (required for search functionality)
+RUN playwright install chromium --with-deps
 
 # Expose port
 EXPOSE 8001
