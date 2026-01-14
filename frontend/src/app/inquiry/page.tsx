@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Search, Loader2, ChevronRight, CheckCircle, TrendingUp, Target, Eye, Star, Trophy, BarChart3, Activity, Zap, Play, Sliders } from "lucide-react";
+import { Search, Loader2, ChevronRight, CheckCircle, TrendingUp, Target, Eye, Star, Trophy, BarChart3, Activity, Zap, Play, Sliders, PenLine, AlertTriangle, Save, MousePointerClick } from "lucide-react";
 import { toast } from "sonner";
-import { placeApi, analyzeApi, AnalyzeResponse, SimulateResponse, SimulateInputs, userDataApi, CorrelationResponse } from "@/lib/api";
+import { placeApi, analyzeApi, AnalyzeResponse, SimulateResponse, SimulateInputs, TargetRankResponse, userDataApi, CorrelationResponse, activityApi, ActivityLogRequest } from "@/lib/api";
 
 interface SearchResult {
   place_id: string;
@@ -70,22 +70,34 @@ function InquiryPageContent() {
   const [placeName, setPlaceName] = useState("");
   const [keywords, setKeywords] = useState("");
   const [trafficCount, setTrafficCount] = useState<string>("");
-  const [reservationCount, setReservationCount] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [analyzeResult, setAnalyzeResult] = useState<AnalyzeResponse | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<SearchResult | null>(null);
   const [userTrafficCount, setUserTrafficCount] = useState<number | null>(null);
-  const [userReservationCount, setUserReservationCount] = useState<number | null>(null);
 
-  // 시뮬레이션 관련 상태
+  // 목표 순위 시뮬레이션 관련 상태
+  const [targetRank, setTargetRank] = useState<number>(1);
+  const [targetSimLoading, setTargetSimLoading] = useState(false);
+  const [targetSimResult, setTargetSimResult] = useState<TargetRankResponse | null>(null);
+
+  // 기존 시뮬레이션 관련 상태 (숨김 처리)
   const [simBlogReview, setSimBlogReview] = useState<number>(0);
   const [simVisitReview, setSimVisitReview] = useState<number>(0);
   const [simInflow, setSimInflow] = useState<number>(0);
-  const [simReservation, setSimReservation] = useState<number>(0);
   const [simLoading, setSimLoading] = useState(false);
   const [simResult, setSimResult] = useState<SimulateResponse | null>(null);
+
+  // 활동 기입 관련 상태
+  const [activityBlogChecked, setActivityBlogChecked] = useState(false);
+  const [activityBlogCount, setActivityBlogCount] = useState<number>(0);
+  const [activitySaveChecked, setActivitySaveChecked] = useState(false);
+  const [activitySaveCount, setActivitySaveCount] = useState<number>(0);
+  const [activityInflowChecked, setActivityInflowChecked] = useState(false);
+  const [activityInflowCount, setActivityInflowCount] = useState<number>(0);
+  const [activityLogging, setActivityLogging] = useState(false);
+  const [activityLogged, setActivityLogged] = useState(false);
 
   // URL 파라미터에서 초기값 설정 및 자동 검색
   // 의존성 배열을 빈 배열로 변경하여 무한 렌더링 방지
@@ -96,12 +108,11 @@ function InquiryPageContent() {
     const urlPlaceName = searchParams.get('placeName');
     const urlKeyword = searchParams.get('keyword');
     const urlTraffic = searchParams.get('traffic');
-    const urlReservation = searchParams.get('reservation');
 
     if (urlPlaceName) {
       setPlaceName(urlPlaceName);
       // 자동으로 업체 검색 시작
-      autoSearchPlace(urlPlaceName, urlKeyword || '', urlTraffic || '', urlReservation || '');
+      autoSearchPlace(urlPlaceName, urlKeyword || '', urlTraffic || '');
     }
     if (urlKeyword) {
       setKeywords(urlKeyword);
@@ -109,16 +120,13 @@ function InquiryPageContent() {
     if (urlTraffic) {
       setTrafficCount(urlTraffic);
     }
-    if (urlReservation) {
-      setReservationCount(urlReservation);
-    }
 
     initialLoadDone.current = true;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 자동 업체 검색 함수
-  const autoSearchPlace = async (name: string, keyword: string, traffic: string, reservation: string) => {
+  const autoSearchPlace = async (name: string, keyword: string, traffic: string) => {
     setSearching(true);
     try {
       const response = await placeApi.search(name, 20);
@@ -132,7 +140,7 @@ function InquiryPageContent() {
         if (keyword) {
           // 바로 순위 조회 실행
           setTimeout(() => {
-            autoRankSearch(firstPlace, keyword, traffic, reservation);
+            autoRankSearch(firstPlace, keyword, traffic);
           }, 100);
         }
       } else {
@@ -146,21 +154,18 @@ function InquiryPageContent() {
   };
 
   // 자동 순위 조회 함수 (ADLOG API 사용)
-  const autoRankSearch = async (place: SearchResult, keyword: string, traffic: string, reservation: string) => {
+  const autoRankSearch = async (place: SearchResult, keyword: string, traffic: string) => {
     setLoading(true);
     try {
       const trafficNum = traffic ? parseInt(traffic, 10) : undefined;
-      const reservationNum = reservation ? parseInt(reservation, 10) : undefined;
 
       setUserTrafficCount(trafficNum || null);
-      setUserReservationCount(reservationNum || null);
 
       // ADLOG API 호출 (정규화된 점수 반환)
       const analyzeData = await analyzeApi.analyze(
         keyword,
         place.name,
-        trafficNum,
-        reservationNum
+        trafficNum
       );
       setAnalyzeResult(analyzeData);
 
@@ -232,17 +237,14 @@ function InquiryPageContent() {
     setLoading(true);
     try {
       const trafficNum = trafficCount ? parseInt(trafficCount, 10) : undefined;
-      const reservationNum = reservationCount ? parseInt(reservationCount, 10) : undefined;
 
       setUserTrafficCount(trafficNum || null);
-      setUserReservationCount(reservationNum || null);
 
       // ADLOG API 호출 (정규화된 점수 반환)
       const analyzeData = await analyzeApi.analyze(
         keywords.trim(),
         selectedPlace.name,
-        trafficNum,
-        reservationNum
+        trafficNum
       );
       setAnalyzeResult(analyzeData);
 
@@ -288,15 +290,23 @@ function InquiryPageContent() {
     setPlaceName("");
     setKeywords("");
     setTrafficCount("");
-    setReservationCount("");
     setUserTrafficCount(null);
-    setUserReservationCount(null);
-    // 시뮬레이션 상태 초기화
+    // 목표 순위 시뮬레이션 상태 초기화
+    setTargetRank(1);
+    setTargetSimResult(null);
+    // 기존 시뮬레이션 상태 초기화
     setSimBlogReview(0);
     setSimVisitReview(0);
     setSimInflow(0);
-    setSimReservation(0);
     setSimResult(null);
+    // 활동 기입 상태 초기화
+    setActivityBlogChecked(false);
+    setActivityBlogCount(0);
+    setActivitySaveChecked(false);
+    setActivitySaveCount(0);
+    setActivityInflowChecked(false);
+    setActivityInflowCount(0);
+    setActivityLogged(false);
   };
 
   // 시뮬레이션 실행
@@ -306,7 +316,7 @@ function InquiryPageContent() {
       return;
     }
 
-    if (simBlogReview === 0 && simVisitReview === 0 && simInflow === 0 && simReservation === 0) {
+    if (simBlogReview === 0 && simVisitReview === 0 && simInflow === 0) {
       toast.error("시뮬레이션할 값을 입력해주세요");
       return;
     }
@@ -317,7 +327,6 @@ function InquiryPageContent() {
         blog_review: simBlogReview,
         visit_review: simVisitReview,
         inflow: simInflow,
-        reservation: simReservation,
       };
 
       const result = await analyzeApi.simulate(
@@ -339,8 +348,90 @@ function InquiryPageContent() {
     setSimBlogReview(0);
     setSimVisitReview(0);
     setSimInflow(0);
-    setSimReservation(0);
     setSimResult(null);
+  };
+
+  // 목표 순위 시뮬레이션 실행
+  const handleTargetRankSimulate = async () => {
+    if (!selectedPlace || !analyzeResult?.keyword || !analyzeResult?.my_place) {
+      toast.error("분석 결과가 없습니다");
+      return;
+    }
+
+    const currentRank = analyzeResult.my_place.rank;
+
+    if (targetRank >= currentRank) {
+      toast.error("목표 순위는 현재 순위보다 높아야 합니다");
+      return;
+    }
+
+    setTargetSimLoading(true);
+    try {
+      const result = await analyzeApi.simulateTargetRank(
+        analyzeResult.keyword,
+        selectedPlace.name,
+        currentRank,
+        targetRank
+      );
+      setTargetSimResult(result);
+      toast.success("목표 순위 시뮬레이션 완료!");
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "시뮬레이션 중 오류가 발생했습니다");
+    } finally {
+      setTargetSimLoading(false);
+    }
+  };
+
+  // 목표 순위 시뮬레이션 초기화
+  const handleTargetSimReset = () => {
+    setTargetRank(1);
+    setTargetSimResult(null);
+  };
+
+  // 활동 기록 제출
+  const handleActivityLog = async () => {
+    if (!selectedPlace || !analyzeResult?.keyword) {
+      toast.error("분석 결과가 없습니다");
+      return;
+    }
+
+    const hasActivity = (activityBlogChecked && activityBlogCount > 0) ||
+                       (activitySaveChecked && activitySaveCount > 0) ||
+                       (activityInflowChecked && activityInflowCount > 0);
+
+    if (!hasActivity) {
+      toast.error("최소 1개 이상의 활동을 입력해주세요");
+      return;
+    }
+
+    setActivityLogging(true);
+    try {
+      const request: ActivityLogRequest = {
+        keyword: analyzeResult.keyword,
+        place_id: selectedPlace.place_id,
+        place_name: selectedPlace.name,
+        blog_review_added: activityBlogChecked ? activityBlogCount : 0,
+        visit_review_added: 0,  // 현재 UI에서는 미사용
+        save_added: activitySaveChecked ? activitySaveCount : 0,
+        inflow_added: activityInflowChecked ? activityInflowCount : 0,
+      };
+
+      await activityApi.log(request);
+      setActivityLogged(true);
+      toast.success("활동이 기록되었습니다! D+1, D+7 후 결과가 자동으로 측정됩니다.");
+
+      // 입력값 초기화
+      setActivityBlogChecked(false);
+      setActivityBlogCount(0);
+      setActivitySaveChecked(false);
+      setActivitySaveCount(0);
+      setActivityInflowChecked(false);
+      setActivityInflowCount(0);
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "활동 기록 중 오류가 발생했습니다");
+    } finally {
+      setActivityLogging(false);
+    }
   };
 
   const getRankBadgeStyle = (rank: number | null | undefined): React.CSSProperties => {
@@ -447,32 +538,19 @@ function InquiryPageContent() {
                     <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>쉼표로 구분하여 여러 키워드 입력</p>
                   </div>
 
-                  {/* 반응형 그리드 */}
-                  <div className="input-grid" style={{ display: 'grid', gap: '12px' }}>
-                    <div>
-                      <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '8px' }}>
-                        유입수 <span style={{ color: '#94a3b8', fontWeight: '400' }}>(선택)</span>
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="네이버 통계 유입수"
-                        value={trafficCount}
-                        onChange={(e) => setTrafficCount(e.target.value)}
-                        style={styles.input}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '8px' }}>
-                        예약건수 <span style={{ color: '#94a3b8', fontWeight: '400' }}>(선택)</span>
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="일 예약 건수"
-                        value={reservationCount}
-                        onChange={(e) => setReservationCount(e.target.value)}
-                        style={styles.input}
-                      />
-                    </div>
+                  {/* 유입수 입력 */}
+                  <div>
+                    <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '8px' }}>
+                      유입수 <span style={{ color: '#94a3b8', fontWeight: '400' }}>(선택)</span>
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="네이버 통계 유입수"
+                      value={trafficCount}
+                      onChange={(e) => setTrafficCount(e.target.value)}
+                      style={styles.input}
+                    />
+                    <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>네이버 플레이스 통계에서 확인 가능합니다</p>
                   </div>
 
                   <button onClick={handleRankSearch} disabled={loading} style={{ ...styles.btnPrimary, width: '100%', justifyContent: 'center', opacity: loading ? 0.6 : 1 }}>
@@ -561,11 +639,11 @@ function InquiryPageContent() {
           <div style={styles.card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
               <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Star style={{ width: '20px', height: '20px', color: '#f59e0b' }} />
+                <Zap style={{ width: '20px', height: '20px', color: '#f59e0b' }} />
               </div>
-              <span style={{ fontSize: '14px', color: '#64748b' }}>예약건수 (입력값)</span>
+              <span style={{ fontSize: '14px', color: '#64748b' }}>경쟁력 (N3)</span>
             </div>
-            <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#1e293b' }}>{userReservationCount?.toLocaleString() || '-'}</span>
+            <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#f59e0b' }}>{myPlace.scores.competition_score.toFixed(1)}</span>
           </div>
         </div>
       )}
@@ -627,15 +705,6 @@ function InquiryPageContent() {
               <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>-{comparison.rank_1_gap.toFixed(4)}</div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* 1위인 경우 축하 */}
-      {myPlace && myPlace.rank === 1 && (
-        <div style={{ ...styles.card, marginBottom: '24px', background: 'linear-gradient(135deg, #fef3c7, #fde68a)', textAlign: 'center', padding: '32px' }}>
-          <Trophy style={{ width: '48px', height: '48px', color: '#f59e0b', margin: '0 auto 12px' }} />
-          <h3 style={{ fontSize: '20px', fontWeight: 'bold', color: '#92400e', marginBottom: '8px' }}>축하합니다! 1위입니다!</h3>
-          <p style={{ fontSize: '14px', color: '#a16207' }}>현재 순위를 유지하기 위해 지속적인 관리를 권장합니다.</p>
         </div>
       )}
 
@@ -740,117 +809,259 @@ function InquiryPageContent() {
         </div>
       )}
 
-      {/* 시뮬레이션 섹션 */}
+      {/* 오늘 어떤 작업을 하셨나요? - 활동 기입 섹션 */}
       {myPlace && (
         <div style={{ ...styles.card, marginBottom: '24px', background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', border: '1px solid #e9d5ff' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#7c3aed', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Sliders style={{ width: '20px', height: '20px', color: '#7c3aed' }} />
-            순위 시뮬레이션
+          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#7c3aed', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <PenLine style={{ width: '20px', height: '20px', color: '#7c3aed' }} />
+            오늘 어떤 작업을 하셨나요?
           </h3>
-          <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '20px' }}>
-            각 항목의 예상 증가량을 입력하고 순위 변화를 예측해보세요.
-          </p>
 
-          {/* 입력 필드 */}
-          <div className="simulation-inputs-grid" style={{ display: 'grid', gap: '16px', marginBottom: '20px' }}>
+          {/* 경고 배너 */}
+          <div style={{
+            padding: '12px 16px',
+            background: '#fef3c7',
+            borderRadius: '8px',
+            border: '1px solid #fcd34d',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+          }}>
+            <AlertTriangle style={{ width: '18px', height: '18px', color: '#d97706', flexShrink: 0 }} />
+            <span style={{ fontSize: '13px', color: '#92400e' }}>
+              모르거나 안했으면 체크하지 마세요. 정확한 데이터만 기록해야 분석이 정확합니다.
+            </span>
+          </div>
+
+          {/* 활동 체크박스 그리드 */}
+          <div className="activity-grid" style={{ display: 'grid', gap: '12px', marginBottom: '20px' }}>
             {/* 블로그 리뷰 */}
-            <div style={{ padding: '16px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
-              <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '8px' }}>
-                블로그 리뷰 추가
+            <div style={{
+              padding: '16px',
+              background: activityBlogChecked ? '#ede9fe' : 'white',
+              borderRadius: '12px',
+              border: activityBlogChecked ? '2px solid #8b5cf6' : '1px solid #e5e7eb',
+              transition: 'all 0.2s',
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={activityBlogChecked}
+                  onChange={(e) => {
+                    setActivityBlogChecked(e.target.checked);
+                    if (!e.target.checked) setActivityBlogCount(0);
+                  }}
+                  style={{ width: '20px', height: '20px', accentColor: '#7c3aed' }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '2px' }}>블로그 리뷰</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>블로그 체험단, 리뷰 의뢰 등</div>
+                </div>
+                {activityBlogChecked && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="number"
+                      min="0"
+                      value={activityBlogCount || ''}
+                      onChange={(e) => setActivityBlogCount(parseInt(e.target.value) || 0)}
+                      placeholder="0"
+                      style={{
+                        width: '70px',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #d1d5db',
+                        fontSize: '14px',
+                        textAlign: 'center',
+                      }}
+                    />
+                    <span style={{ fontSize: '14px', color: '#6b7280' }}>개</span>
+                  </div>
+                )}
               </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <input
-                  type="range"
-                  min="0"
-                  max="50"
-                  value={simBlogReview}
-                  onChange={(e) => setSimBlogReview(Number(e.target.value))}
-                  style={{ flex: 1, accentColor: '#7c3aed' }}
-                />
-                <input
-                  type="number"
-                  min="0"
-                  value={simBlogReview}
-                  onChange={(e) => setSimBlogReview(Math.max(0, Number(e.target.value)))}
-                  style={{ ...styles.input, width: '80px', textAlign: 'center' }}
-                />
-                <span style={{ fontSize: '14px', color: '#6b7280' }}>개</span>
-              </div>
             </div>
 
-            {/* 방문자 리뷰 */}
-            <div style={{ padding: '16px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
-              <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '8px' }}>
-                방문자 리뷰 추가
+            {/* 저장수 */}
+            <div style={{
+              padding: '16px',
+              background: activitySaveChecked ? '#ede9fe' : 'white',
+              borderRadius: '12px',
+              border: activitySaveChecked ? '2px solid #8b5cf6' : '1px solid #e5e7eb',
+              transition: 'all 0.2s',
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={activitySaveChecked}
+                  onChange={(e) => {
+                    setActivitySaveChecked(e.target.checked);
+                    if (!e.target.checked) setActivitySaveCount(0);
+                  }}
+                  style={{ width: '20px', height: '20px', accentColor: '#7c3aed' }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Save style={{ width: '16px', height: '16px', color: '#7c3aed' }} />
+                    저장수
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>플레이스 저장 증가 활동</div>
+                </div>
+                {activitySaveChecked && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="number"
+                      min="0"
+                      value={activitySaveCount || ''}
+                      onChange={(e) => setActivitySaveCount(parseInt(e.target.value) || 0)}
+                      placeholder="0"
+                      style={{
+                        width: '70px',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #d1d5db',
+                        fontSize: '14px',
+                        textAlign: 'center',
+                      }}
+                    />
+                    <span style={{ fontSize: '14px', color: '#6b7280' }}>개</span>
+                  </div>
+                )}
               </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={simVisitReview}
-                  onChange={(e) => setSimVisitReview(Number(e.target.value))}
-                  style={{ flex: 1, accentColor: '#7c3aed' }}
-                />
-                <input
-                  type="number"
-                  min="0"
-                  value={simVisitReview}
-                  onChange={(e) => setSimVisitReview(Math.max(0, Number(e.target.value)))}
-                  style={{ ...styles.input, width: '80px', textAlign: 'center' }}
-                />
-                <span style={{ fontSize: '14px', color: '#6b7280' }}>개</span>
-              </div>
             </div>
 
             {/* 유입수 */}
-            <div style={{ padding: '16px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
-              <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '8px' }}>
-                유입수 증가량
+            <div style={{
+              padding: '16px',
+              background: activityInflowChecked ? '#ede9fe' : 'white',
+              borderRadius: '12px',
+              border: activityInflowChecked ? '2px solid #8b5cf6' : '1px solid #e5e7eb',
+              transition: 'all 0.2s',
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={activityInflowChecked}
+                  onChange={(e) => {
+                    setActivityInflowChecked(e.target.checked);
+                    if (!e.target.checked) setActivityInflowCount(0);
+                  }}
+                  style={{ width: '20px', height: '20px', accentColor: '#7c3aed' }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <MousePointerClick style={{ width: '16px', height: '16px', color: '#7c3aed' }} />
+                    유입수
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>오늘 유입수 (네이버 통계 기준)</div>
+                </div>
+                {activityInflowChecked && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="number"
+                      min="0"
+                      value={activityInflowCount || ''}
+                      onChange={(e) => setActivityInflowCount(parseInt(e.target.value) || 0)}
+                      placeholder="0"
+                      style={{
+                        width: '70px',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #d1d5db',
+                        fontSize: '14px',
+                        textAlign: 'center',
+                      }}
+                    />
+                    <span style={{ fontSize: '14px', color: '#6b7280' }}>회</span>
+                  </div>
+                )}
               </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <input
-                  type="range"
-                  min="0"
-                  max="500"
-                  step="10"
-                  value={simInflow}
-                  onChange={(e) => setSimInflow(Number(e.target.value))}
-                  style={{ flex: 1, accentColor: '#7c3aed' }}
-                />
-                <input
-                  type="number"
-                  min="0"
-                  value={simInflow}
-                  onChange={(e) => setSimInflow(Math.max(0, Number(e.target.value)))}
-                  style={{ ...styles.input, width: '80px', textAlign: 'center' }}
-                />
-                <span style={{ fontSize: '14px', color: '#6b7280' }}>명</span>
-              </div>
             </div>
+          </div>
 
-            {/* 예약수 */}
-            <div style={{ padding: '16px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
-              <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '8px' }}>
-                예약수 증가량
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={simReservation}
-                  onChange={(e) => setSimReservation(Number(e.target.value))}
-                  style={{ flex: 1, accentColor: '#7c3aed' }}
-                />
-                <input
-                  type="number"
-                  min="0"
-                  value={simReservation}
-                  onChange={(e) => setSimReservation(Math.max(0, Number(e.target.value)))}
-                  style={{ ...styles.input, width: '80px', textAlign: 'center' }}
-                />
-                <span style={{ fontSize: '14px', color: '#6b7280' }}>건</span>
+          {/* 제출 버튼 */}
+          <button
+            onClick={handleActivityLog}
+            disabled={activityLogging || activityLogged}
+            style={{
+              ...styles.btnPrimary,
+              background: activityLogged
+                ? 'linear-gradient(135deg, #22c55e, #16a34a)'
+                : 'linear-gradient(135deg, #7c3aed, #9333ea)',
+              width: '100%',
+              justifyContent: 'center',
+              opacity: activityLogging ? 0.6 : 1,
+            }}
+          >
+            {activityLogging ? (
+              <Loader2 style={{ width: '18px', height: '18px', animation: 'spin 1s linear infinite' }} />
+            ) : activityLogged ? (
+              <CheckCircle style={{ width: '18px', height: '18px' }} />
+            ) : (
+              <PenLine style={{ width: '18px', height: '18px' }} />
+            )}
+            {activityLogging ? '기록 중...' : activityLogged ? '오늘 활동 기록 완료!' : '활동 기록하기'}
+          </button>
+
+          {activityLogged && (
+            <div style={{
+              marginTop: '12px',
+              padding: '12px',
+              background: '#dcfce7',
+              borderRadius: '8px',
+              fontSize: '13px',
+              color: '#166534',
+              textAlign: 'center',
+            }}>
+              D+1 (내일), D+7 (7일 후) 순위 변화가 자동으로 측정됩니다.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 목표 순위 시뮬레이션 섹션 */}
+      {myPlace && myPlace.rank > 1 && (
+        <div style={{ ...styles.card, marginBottom: '24px', background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', border: '1px solid #e9d5ff' }}>
+          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#7c3aed', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Target style={{ width: '20px', height: '20px', color: '#7c3aed' }} />
+            목표 순위 시뮬레이션
+          </h3>
+          <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '20px' }}>
+            목표 순위를 선택하면 필요한 점수 변화를 예측해드립니다.
+          </p>
+
+          {/* 현재 순위 표시 */}
+          <div style={{ padding: '16px', background: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>현재 순위</div>
+                <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#7c3aed' }}>{myPlace.rank}위</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>목표 순위 선택</div>
+                <select
+                  value={targetRank}
+                  onChange={(e) => {
+                    setTargetRank(Number(e.target.value));
+                    setTargetSimResult(null);
+                  }}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: '10px',
+                    border: '2px solid #7c3aed',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    color: '#7c3aed',
+                    background: 'white',
+                    cursor: 'pointer',
+                    minWidth: '100px',
+                  }}
+                >
+                  {Array.from({ length: myPlace.rank - 1 }, (_, i) => i + 1).map((rank) => (
+                    <option key={rank} value={rank}>
+                      {rank}위
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -858,25 +1069,25 @@ function InquiryPageContent() {
           {/* 버튼 그룹 */}
           <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
             <button
-              onClick={handleSimulate}
-              disabled={simLoading}
+              onClick={handleTargetRankSimulate}
+              disabled={targetSimLoading}
               style={{
                 ...styles.btnPrimary,
                 background: 'linear-gradient(135deg, #7c3aed, #9333ea)',
                 flex: 1,
                 justifyContent: 'center',
-                opacity: simLoading ? 0.6 : 1,
+                opacity: targetSimLoading ? 0.6 : 1,
               }}
             >
-              {simLoading ? (
+              {targetSimLoading ? (
                 <Loader2 style={{ width: '18px', height: '18px', animation: 'spin 1s linear infinite' }} />
               ) : (
                 <Play style={{ width: '18px', height: '18px' }} />
               )}
-              {simLoading ? '시뮬레이션 중...' : '시뮬레이션 실행'}
+              {targetSimLoading ? '분석 중...' : `${targetRank}위 달성 분석`}
             </button>
             <button
-              onClick={handleSimReset}
+              onClick={handleTargetSimReset}
               style={{ ...styles.btnSecondary }}
             >
               초기화
@@ -884,107 +1095,104 @@ function InquiryPageContent() {
           </div>
 
           {/* 시뮬레이션 결과 */}
-          {simResult && (
+          {targetSimResult && (
             <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb' }}>
               <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <BarChart3 style={{ width: '18px', height: '18px', color: '#7c3aed' }} />
-                시뮬레이션 결과
+                {targetSimResult.target_rank}위 달성을 위한 분석
               </h4>
 
-              {/* N3 경쟁력 점수 (핵심 지표) */}
-              {simResult.current_n3 !== undefined && simResult.predicted_n3 !== undefined && (
-                <div style={{ marginBottom: '20px', padding: '16px', background: 'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius: '12px', border: '1px solid #fcd34d' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                    <Zap style={{ width: '18px', height: '18px', color: '#ca8a04' }} />
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#92400e' }}>경쟁력점수 (N3) - 순위 결정 핵심 지표</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', textAlign: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>현재 N3</div>
-                      <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#78350f' }}>{simResult.current_n3.toFixed(2)}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>예상 N3</div>
-                      <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#78350f' }}>{simResult.predicted_n3.toFixed(2)}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>N3 변화</div>
-                      <div style={{ fontSize: '22px', fontWeight: 'bold', color: simResult.n3_change && simResult.n3_change > 0 ? '#16a34a' : '#78350f' }}>
-                        {simResult.n3_change && simResult.n3_change > 0 ? '+' : ''}{(simResult.n3_change || 0).toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ marginTop: '12px', fontSize: '12px', color: '#92400e', textAlign: 'center' }}>
-                    N3가 올라가면 순위가 상승합니다
-                  </div>
-                </div>
-              )}
-
-              {/* 순위 변화 */}
-              <div className="simulation-result-grid" style={{ display: 'grid', gap: '16px', marginBottom: '20px' }}>
+              {/* 순위 변화 미리보기 */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '20px' }}>
                 <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '10px', textAlign: 'center' }}>
                   <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>현재 순위</div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>{simResult.current_rank}위</div>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1e293b' }}>{targetSimResult.current_rank}위</div>
                 </div>
-                <div style={{ padding: '16px', background: simResult.predicted_rank < simResult.current_rank ? '#fef3c7' : '#f8fafc', borderRadius: '10px', textAlign: 'center', border: simResult.predicted_rank < simResult.current_rank ? '1px solid #fde68a' : 'none' }}>
-                  <div style={{ fontSize: '12px', color: simResult.predicted_rank < simResult.current_rank ? '#ca8a04' : '#64748b', marginBottom: '4px' }}>예상 순위</div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: simResult.predicted_rank < simResult.current_rank ? '#ca8a04' : '#1e293b' }}>{simResult.predicted_rank}위</div>
-                  {simResult.predicted_rank < simResult.current_rank && (
-                    <div style={{ fontSize: '12px', color: '#f59e0b', marginTop: '4px' }}>
-                      {simResult.current_rank - simResult.predicted_rank}순위 상승
-                    </div>
-                  )}
-                </div>
-                <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>현재 N2</div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>{simResult.current_score.toFixed(2)}</div>
-                </div>
-                <div style={{ padding: '16px', background: '#f0fdf4', borderRadius: '10px', textAlign: 'center', border: '1px solid #bbf7d0' }}>
-                  <div style={{ fontSize: '12px', color: '#16a34a', marginBottom: '4px' }}>예상 N2</div>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{simResult.predicted_score.toFixed(2)}</div>
-                  <div style={{ fontSize: '12px', color: '#22c55e', marginTop: '4px' }}>+{simResult.total_effect.toFixed(2)}점</div>
+                <div style={{ padding: '16px', background: 'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius: '10px', textAlign: 'center', border: '1px solid #fde68a' }}>
+                  <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>목표 순위</div>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#ca8a04' }}>{targetSimResult.target_rank}위</div>
+                  <div style={{ fontSize: '12px', color: '#f59e0b', marginTop: '4px' }}>
+                    {targetSimResult.current_rank - targetSimResult.target_rank}단계 상승 목표
+                  </div>
                 </div>
               </div>
 
-              {/* 항목별 효과 */}
-              <div style={{ marginTop: '16px' }}>
-                <h5 style={{ fontSize: '14px', fontWeight: '600', color: '#374151', marginBottom: '12px' }}>항목별 예상 효과</h5>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {simResult.effects.blog_review && simResult.effects.blog_review.amount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#f8fafc', borderRadius: '8px' }}>
-                      <span style={{ fontSize: '14px', color: '#64748b' }}>블로그 리뷰 +{simResult.effects.blog_review.amount}개</span>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#22c55e' }}>+{simResult.effects.blog_review.effect.toFixed(2)}점</span>
-                    </div>
-                  )}
-                  {simResult.effects.visit_review && simResult.effects.visit_review.amount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#f8fafc', borderRadius: '8px' }}>
-                      <span style={{ fontSize: '14px', color: '#64748b' }}>방문자 리뷰 +{simResult.effects.visit_review.amount}개</span>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#22c55e' }}>+{simResult.effects.visit_review.effect.toFixed(2)}점</span>
-                    </div>
-                  )}
-                  {simResult.effects.inflow && simResult.effects.inflow.amount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#f8fafc', borderRadius: '8px' }}>
-                      <span style={{ fontSize: '14px', color: '#64748b' }}>유입수 +{simResult.effects.inflow.amount}명</span>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#22c55e' }}>+{simResult.effects.inflow.effect.toFixed(2)}점</span>
-                    </div>
-                  )}
-                  {simResult.effects.reservation && simResult.effects.reservation.amount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: '#f8fafc', borderRadius: '8px' }}>
-                      <span style={{ fontSize: '14px', color: '#64748b' }}>예약수 +{simResult.effects.reservation.amount}건</span>
-                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#22c55e' }}>+{simResult.effects.reservation.effect.toFixed(2)}점</span>
-                    </div>
-                  )}
+              {/* N2 점수 변화 */}
+              <div style={{ marginBottom: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <Target style={{ width: '18px', height: '18px', color: '#16a34a' }} />
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#14532d' }}>품질점수 (N2) 변화 필요</span>
                 </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', textAlign: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#14532d', marginBottom: '4px' }}>현재 N2</div>
+                    <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#166534' }}>{targetSimResult.n2_change.current.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#14532d', marginBottom: '4px' }}>목표 N2</div>
+                    <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#166534' }}>{targetSimResult.n2_change.target.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#14532d', marginBottom: '4px' }}>필요 증가</div>
+                    <div style={{ fontSize: '20px', fontWeight: 'bold', color: targetSimResult.n2_change.change > 0 ? '#dc2626' : '#16a34a' }}>
+                      {targetSimResult.n2_change.change > 0 ? '+' : ''}{targetSimResult.n2_change.change.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* N3 점수 변화 */}
+              <div style={{ marginBottom: '16px', padding: '16px', background: 'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius: '12px', border: '1px solid #fcd34d' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <Zap style={{ width: '18px', height: '18px', color: '#ca8a04' }} />
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#92400e' }}>경쟁력점수 (N3) 예상 변화</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', textAlign: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>현재 N3</div>
+                    <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#78350f' }}>{targetSimResult.n3_change.current.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>예상 N3</div>
+                    <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#78350f' }}>{targetSimResult.n3_change.target.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>예상 증가</div>
+                    <div style={{ fontSize: '20px', fontWeight: 'bold', color: targetSimResult.n3_change.change > 0 ? '#16a34a' : '#78350f' }}>
+                      {targetSimResult.n3_change.change > 0 ? '+' : ''}{targetSimResult.n3_change.change.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 메시지 */}
+              <div style={{ padding: '16px', background: targetSimResult.is_achievable ? '#eff6ff' : '#fef2f2', borderRadius: '12px', border: `1px solid ${targetSimResult.is_achievable ? '#bfdbfe' : '#fecaca'}` }}>
+                <div style={{ fontSize: '14px', color: targetSimResult.is_achievable ? '#1e40af' : '#991b1b', lineHeight: '1.6' }}>
+                  {targetSimResult.message}
+                </div>
+                {!targetSimResult.is_achievable && (
+                  <div style={{ marginTop: '8px', fontSize: '12px', color: '#dc2626' }}>
+                    목표 달성이 어려울 수 있습니다. 더 현실적인 목표 순위를 설정해보세요.
+                  </div>
+                )}
               </div>
 
               {/* 안내 문구 */}
-              <div style={{ marginTop: '16px', padding: '12px', background: '#eff6ff', borderRadius: '8px', fontSize: '12px', color: '#2563eb' }}>
-                <strong>순위 = N3(경쟁력점수) 내림차순</strong><br />
-                * N3는 N1(키워드지수)과 N2(품질점수)의 조합으로 계산됩니다.<br />
-                * 시뮬레이션 결과는 현재 데이터 기준 예측값이며, 실제 결과와 다를 수 있습니다.
+              <div style={{ marginTop: '16px', padding: '12px', background: '#f8fafc', borderRadius: '8px', fontSize: '12px', color: '#64748b' }}>
+                <strong>분석 기준:</strong> {targetSimResult.data_source === 'cache' ? '캐싱된 키워드 파라미터' : 'ADLOG API 실시간 데이터'}<br />
+                * 실제 순위는 경쟁사 변동에 따라 달라질 수 있습니다.
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 1위인 경우 축하 메시지 (시뮬레이션 대신) */}
+      {myPlace && myPlace.rank === 1 && (
+        <div style={{ ...styles.card, marginBottom: '24px', background: 'linear-gradient(135deg, #fef3c7, #fde68a)', textAlign: 'center', padding: '32px' }}>
+          <Trophy style={{ width: '48px', height: '48px', color: '#f59e0b', margin: '0 auto 12px' }} />
+          <h3 style={{ fontSize: '20px', fontWeight: 'bold', color: '#92400e', marginBottom: '8px' }}>축하합니다! 1위입니다!</h3>
+          <p style={{ fontSize: '14px', color: '#a16207' }}>현재 순위를 유지하기 위해 지속적인 관리를 권장합니다.</p>
         </div>
       )}
 
@@ -1016,7 +1224,14 @@ function InquiryPageContent() {
           grid-template-columns: repeat(4, 1fr);
         }
 
+        .activity-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+
         @media (max-width: 1024px) {
+          .activity-grid {
+            grid-template-columns: 1fr;
+          }
           .result-kpi-grid {
             grid-template-columns: repeat(2, 1fr);
           }

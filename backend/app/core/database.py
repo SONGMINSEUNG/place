@@ -26,6 +26,9 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False
 )
 
+# alias for scheduler (backwards compatibility)
+async_session_maker = AsyncSessionLocal
+
 Base = declarative_base()
 
 
@@ -43,6 +46,6 @@ async def get_db():
 
 async def init_db():
     # Import models to register them with Base
-    from app.models import User, Place, PlaceSearch, RankHistory, SavedKeyword, AdlogTrainingData, UserInputData
+    from app.models import User, Place, PlaceSearch, RankHistory, SavedKeyword, AdlogTrainingData, UserInputData, KeywordParameter
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

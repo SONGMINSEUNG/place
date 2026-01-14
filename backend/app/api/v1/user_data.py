@@ -37,7 +37,6 @@ async def submit_user_data(
     - place_id: 플레이스 ID
     - place_name: 업체명 (선택)
     - inflow: 유입수
-    - reservation: 예약수
 
     내부적으로 ADLOG API를 호출하여 N2 값을 가져와 함께 저장합니다.
     """
@@ -83,7 +82,6 @@ async def submit_user_data(
             place_id=request.place_id,
             place_name=request.place_name,
             inflow=request.inflow,
-            reservation=request.reservation,
             n1=n1,
             n2=n2,
             n3=n3,
@@ -105,7 +103,6 @@ async def submit_user_data(
             place_id=user_data.place_id,
             place_name=user_data.place_name,
             inflow=user_data.inflow,
-            reservation=user_data.reservation,
             n2=user_data.n2,
             rank=user_data.rank,
             created_at=user_data.created_at,
@@ -151,9 +148,7 @@ async def get_correlation_analysis(
 
     수집된 사용자 데이터를 바탕으로 다음 상관관계를 분석합니다:
     - 유입수 <-> N2 (품질점수)
-    - 예약수 <-> N2 (품질점수)
     - 유입수 <-> 순위
-    - 예약수 <-> 순위
 
     Args:
         keyword: 특정 키워드로 필터링 (선택)
@@ -175,7 +170,6 @@ async def get_correlation_analysis(
 
         # 데이터 추출
         inflows = [d.inflow for d in data_list]
-        reservations = [d.reservation for d in data_list]
         n2_values = [d.n2 for d in data_list if d.n2 is not None]
         ranks = [d.rank for d in data_list if d.rank is not None]
 
@@ -186,21 +180,9 @@ async def get_correlation_analysis(
             [d.n2 for d in data_list]
         )
 
-        # 예약수 <-> N2
-        res_n2_corr, res_n2_pval = calculate_correlation(
-            reservations,
-            [d.n2 for d in data_list]
-        )
-
         # 유입수 <-> 순위 (순위는 낮을수록 좋으므로 음의 상관이 좋은 것)
         inflow_rank_corr, inflow_rank_pval = calculate_correlation(
             inflows,
-            [d.rank for d in data_list]
-        )
-
-        # 예약수 <-> 순위
-        res_rank_corr, res_rank_pval = calculate_correlation(
-            reservations,
             [d.rank for d in data_list]
         )
 
@@ -215,17 +197,8 @@ async def get_correlation_analysis(
             elif inflow_n2_corr < -0.3:
                 interpretation_parts.append("유입수와 품질점수(N2) 사이에 음의 상관관계가 있습니다.")
 
-        if res_n2_pval < 0.05:
-            if res_n2_corr > 0.5:
-                interpretation_parts.append("예약수와 품질점수(N2) 사이에 강한 양의 상관관계가 있습니다.")
-            elif res_n2_corr > 0.3:
-                interpretation_parts.append("예약수와 품질점수(N2) 사이에 중간 정도의 양의 상관관계가 있습니다.")
-
         if inflow_rank_pval < 0.05 and inflow_rank_corr < -0.3:
             interpretation_parts.append("유입수가 높을수록 순위가 좋아지는 경향이 있습니다.")
-
-        if res_rank_pval < 0.05 and res_rank_corr < -0.3:
-            interpretation_parts.append("예약수가 높을수록 순위가 좋아지는 경향이 있습니다.")
 
         if not interpretation_parts:
             interpretation_parts.append("현재 데이터에서는 유의미한 상관관계가 발견되지 않았습니다. 더 많은 데이터 수집이 필요합니다.")
@@ -241,28 +214,12 @@ async def get_correlation_analysis(
                 is_significant=inflow_n2_pval < 0.05,
                 sample_size=len([d for d in data_list if d.n2 is not None]),
             ),
-            reservation_n2=CorrelationResult(
-                variable1="예약수",
-                variable2="품질점수(N2)",
-                correlation=round(res_n2_corr, 4),
-                p_value=round(res_n2_pval, 4),
-                is_significant=res_n2_pval < 0.05,
-                sample_size=len([d for d in data_list if d.n2 is not None]),
-            ),
             inflow_rank=CorrelationResult(
                 variable1="유입수",
                 variable2="순위",
                 correlation=round(inflow_rank_corr, 4),
                 p_value=round(inflow_rank_pval, 4),
                 is_significant=inflow_rank_pval < 0.05,
-                sample_size=len([d for d in data_list if d.rank is not None]),
-            ),
-            reservation_rank=CorrelationResult(
-                variable1="예약수",
-                variable2="순위",
-                correlation=round(res_rank_corr, 4),
-                p_value=round(res_rank_pval, 4),
-                is_significant=res_rank_pval < 0.05,
                 sample_size=len([d for d in data_list if d.rank is not None]),
             ),
             total_samples=len(data_list),
@@ -312,7 +269,6 @@ async def get_user_data(
                     "place_id": d.place_id,
                     "place_name": d.place_name,
                     "inflow": d.inflow,
-                    "reservation": d.reservation,
                     "n1": d.n1,
                     "n2": d.n2,
                     "n3": d.n3,

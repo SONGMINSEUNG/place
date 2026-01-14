@@ -131,7 +131,6 @@ export default function Dashboard() {
   const [quickPlaceName, setQuickPlaceName] = useState("");
   const [quickKeyword, setQuickKeyword] = useState("");
   const [quickTraffic, setQuickTraffic] = useState("");
-  const [quickReservation, setQuickReservation] = useState("");
 
   // localStorage에서 데이터 로드하는 함수
   const loadLocalStorageData = useCallback(() => {
@@ -363,9 +362,6 @@ export default function Dashboard() {
     if (quickTraffic) {
       params.set('traffic', quickTraffic);
     }
-    if (quickReservation) {
-      params.set('reservation', quickReservation);
-    }
     router.push(`/inquiry?${params.toString()}`);
   };
 
@@ -501,7 +497,7 @@ export default function Dashboard() {
       <div style={{ ...styles.card, marginBottom: '24px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
         <div style={{ marginBottom: '16px' }}>
           <h2 style={{ fontSize: '18px', fontWeight: '600', color: 'white', marginBottom: '4px' }}>빠른 순위 조회</h2>
-          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.8)' }}>업체명, 키워드, 유입수, 예약건수를 입력하고 바로 순위를 확인하세요</p>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.8)' }}>업체명, 키워드, 유입수를 입력하고 바로 순위를 확인하세요</p>
         </div>
         {/* 반응형 그리드 - 모바일에서는 세로로 쌓임 */}
         <div className="quick-search-grid" style={{ display: 'grid', gap: '10px', alignItems: 'center' }}>
@@ -521,17 +517,10 @@ export default function Dashboard() {
           />
           <input
             type="number"
-            placeholder="유입수"
+            placeholder="유입수 (선택)"
             value={quickTraffic}
             onChange={(e) => setQuickTraffic(e.target.value)}
             style={{ ...styles.inputWhite, gridArea: 'traffic' }}
-          />
-          <input
-            type="number"
-            placeholder="예약건수"
-            value={quickReservation}
-            onChange={(e) => setQuickReservation(e.target.value)}
-            style={{ ...styles.inputWhite, gridArea: 'reservation' }}
           />
           <button
             onClick={handleQuickSearch}
@@ -911,8 +900,8 @@ export default function Dashboard() {
 
         /* 빠른 조회 그리드 */
         .quick-search-grid {
-          grid-template-columns: 2fr 2fr 1fr 1fr auto;
-          grid-template-areas: "place keyword traffic reservation button";
+          grid-template-columns: 2fr 2fr 1fr auto;
+          grid-template-areas: "place keyword traffic button";
         }
 
         /* KPI 그리드 */
@@ -946,8 +935,7 @@ export default function Dashboard() {
             grid-template-columns: 1fr 1fr;
             grid-template-areas:
               "place keyword"
-              "traffic reservation"
-              "button button";
+              "traffic button";
           }
 
           .kpi-grid {
@@ -979,7 +967,6 @@ export default function Dashboard() {
               "place"
               "keyword"
               "traffic"
-              "reservation"
               "button";
           }
 

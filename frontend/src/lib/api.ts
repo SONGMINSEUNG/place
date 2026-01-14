@@ -749,9 +749,34 @@ export interface AnalyzeResponse {
 
 export interface SimulateInputs {
   inflow: number;
-  reservation: number;
   blog_review: number;
   visit_review: number;
+}
+
+// 목표 순위 시뮬레이션 타입
+export interface TargetRankScoreChange {
+  current: number;
+  target: number;
+  change: number;
+}
+
+export interface TargetRankRequest {
+  keyword: string;
+  place_name: string;
+  current_rank: number;
+  target_rank: number;
+}
+
+export interface TargetRankResponse {
+  keyword: string;
+  place_name: string;
+  current_rank: number;
+  target_rank: number;
+  n2_change: TargetRankScoreChange;
+  n3_change: TargetRankScoreChange;
+  message: string;
+  is_achievable: boolean;
+  data_source: string;
 }
 
 export interface SimulateEffect {
@@ -764,7 +789,6 @@ export interface SimulateResponse {
   current_rank: number;
   effects: {
     inflow?: SimulateEffect;
-    reservation?: SimulateEffect;
     blog_review?: SimulateEffect;
     visit_review?: SimulateEffect;
   };
@@ -782,14 +806,12 @@ export const analyzeApi = {
   analyze: async (
     keyword: string,
     placeName?: string,
-    inflow?: number,
-    reservation?: number
+    inflow?: number
   ): Promise<AnalyzeResponse> => {
     const { data } = await api.post('/v1/analyze', {
       keyword,
       place_name: placeName,
       inflow,
-      reservation,
     });
     return data;
   },
@@ -807,6 +829,22 @@ export const analyzeApi = {
     });
     return data;
   },
+
+  // 목표 순위 시뮬레이션
+  simulateTargetRank: async (
+    keyword: string,
+    placeName: string,
+    currentRank: number,
+    targetRank: number
+  ): Promise<TargetRankResponse> => {
+    const { data } = await api.post('/v1/simulate/target-rank', {
+      keyword,
+      place_name: placeName,
+      current_rank: currentRank,
+      target_rank: targetRank,
+    });
+    return data;
+  },
 };
 
 // ===========================================
@@ -818,7 +856,6 @@ export interface SubmitDataRequest {
   place_id: string;
   place_name?: string;
   inflow: number;
-  reservation: number;
 }
 
 export interface SubmitDataResponse {
@@ -828,7 +865,6 @@ export interface SubmitDataResponse {
   place_id: string;
   place_name?: string;
   inflow: number;
-  reservation: number;
   n2?: number;
   rank?: number;
   created_at: string;
@@ -845,9 +881,7 @@ export interface CorrelationResult {
 
 export interface CorrelationResponse {
   inflow_n2: CorrelationResult;
-  reservation_n2: CorrelationResult;
   inflow_rank: CorrelationResult;
-  reservation_rank: CorrelationResult;
   total_samples: number;
   analysis_date: string;
   interpretation: string;
@@ -859,7 +893,6 @@ export interface UserInputDataItem {
   place_id: string;
   place_name?: string;
   inflow: number;
-  reservation: number;
   n1?: number;
   n2?: number;
   n3?: number;
@@ -894,6 +927,117 @@ export const userDataApi = {
     const { data } = await api.get('/v1/user-data', {
       params: { keyword, place_id: placeId, limit },
     });
+    return data;
+  },
+};
+
+// ===========================================
+// 활동 로그 API
+// ===========================================
+
+export interface ActivityLogRequest {
+  keyword: string;
+  place_id?: string;
+  place_name?: string;
+  activity_date?: string;  // YYYY-MM-DD
+  blog_review_added: number;
+  visit_review_added: number;
+  save_added: number;
+  inflow_added: number;
+}
+
+export interface ActivityLogResponse {
+  success: boolean;
+  log_id: number;
+  keyword: string;
+  place_name?: string;
+  activity_date: string;
+  blog_review_added: number;
+  visit_review_added: number;
+  save_added: number;
+  inflow_added: number;
+  rank_before?: number;
+  n3_before?: number;
+  created_at: string;
+}
+
+export interface ActivityHistoryItem {
+  id: number;
+  keyword: string;
+  place_name?: string;
+  activity_date: string;
+  blog_review_added: number;
+  visit_review_added: number;
+  save_added: number;
+  inflow_added: number;
+  rank_before?: number;
+  n3_before?: number;
+  rank_after_1d?: number;
+  n3_after_1d?: number;
+  rank_after_7d?: number;
+  n3_after_7d?: number;
+  rank_change_1d?: number;
+  rank_change_7d?: number;
+  created_at: string;
+}
+
+export interface ActivityHistoryResponse {
+  total: number;
+  data: ActivityHistoryItem[];
+}
+
+export interface EffectByActivity {
+  activity_type: string;
+  total_added: number;
+  sample_count: number;
+  avg_rank_change_1d?: number;
+  avg_rank_change_7d?: number;
+  avg_n3_change_1d?: number;
+  avg_n3_change_7d?: number;
+}
+
+export interface EffectAnalysisResponse {
+  total_logs: number;
+  logs_with_result: number;
+  effects: EffectByActivity[];
+  interpretation: string;
+  analysis_date: string;
+}
+
+export const activityApi = {
+  // 활동 기록
+  log: async (request: ActivityLogRequest): Promise<ActivityLogResponse> => {
+    const { data } = await api.post('/v1/activity/log', request);
+    return data;
+  },
+
+  // 활동 히스토리 조회
+  getHistory: async (
+    keyword?: string,
+    placeId?: string,
+    days = 30,
+    limit = 100
+  ): Promise<ActivityHistoryResponse> => {
+    const { data } = await api.get('/v1/activity/history', {
+      params: { keyword, place_id: placeId, days, limit },
+    });
+    return data;
+  },
+
+  // 효과 분석
+  getEffectAnalysis: async (
+    keyword?: string,
+    days = 90
+  ): Promise<EffectAnalysisResponse> => {
+    const { data } = await api.get('/v1/activity/effect-analysis', {
+      params: { keyword, days },
+    });
+    return data;
+  },
+
+  // 결과 업데이트 (배치)
+  updateResults: async (): Promise<{ success: boolean; updated_count: number }> => {
+    const { data } = await api.post('/v1/activity/update-results');
     return data;
   },
 };

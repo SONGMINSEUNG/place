@@ -17,7 +17,6 @@ class AnalyzeRequest(BaseModel):
     keyword: str = Field(..., min_length=1, max_length=50, description="검색 키워드")
     place_name: Optional[str] = Field(None, max_length=100, description="업체명 (선택)")
     inflow: Optional[int] = Field(None, ge=0, le=1000000, description="오늘 유입수")
-    reservation: Optional[int] = Field(None, ge=0, le=100000, description="오늘 예약수")
 
     @validator('keyword')
     def validate_keyword(cls, v):
@@ -35,7 +34,6 @@ class AnalyzeRequest(BaseModel):
 class SimulateInputs(BaseModel):
     """시뮬레이션 입력 항목"""
     inflow: int = Field(0, ge=0, le=10000, description="유입수 추가")
-    reservation: int = Field(0, ge=0, le=1000, description="예약수 추가")
     blog_review: int = Field(0, ge=0, le=500, description="블로그 리뷰 추가")
     visit_review: int = Field(0, ge=0, le=1000, description="방문자 리뷰 추가")
 
@@ -53,7 +51,6 @@ class UserDataInput(BaseModel):
     keyword: str
     date: Optional[datetime] = None
     inflow: int = Field(..., ge=0, description="일간 유입수")
-    reservation: int = Field(..., ge=0, description="일간 예약수")
 
 
 # ===========================================
@@ -121,6 +118,7 @@ class AnalyzeResponse(BaseModel):
     recommendations: List[RecommendationItem] = []
     competitors: List[CompetitorResponse] = []
     all_places: List[PlaceResponse] = []
+    data_source: str = Field("api", description="데이터 소스 (api: ADLOG API, cache: 캐싱된 파라미터)")
 
 
 class SimulateEffectItem(BaseModel):
@@ -176,7 +174,6 @@ class SubmitDataRequest(BaseModel):
     place_id: str = Field(..., min_length=1, max_length=50, description="플레이스 ID")
     place_name: Optional[str] = Field(None, max_length=255, description="업체명")
     inflow: int = Field(..., ge=0, le=1000000, description="유입수")
-    reservation: int = Field(..., ge=0, le=100000, description="예약수")
 
     @validator('keyword')
     def validate_keyword(cls, v):
@@ -193,7 +190,6 @@ class SubmitDataResponse(BaseModel):
     place_id: str
     place_name: Optional[str]
     inflow: int
-    reservation: int
     n2: Optional[float] = None
     rank: Optional[int] = None
     created_at: datetime
@@ -212,9 +208,7 @@ class CorrelationResult(BaseModel):
 class CorrelationResponse(BaseModel):
     """상관관계 분석 응답"""
     inflow_n2: CorrelationResult
-    reservation_n2: CorrelationResult
     inflow_rank: CorrelationResult
-    reservation_rank: CorrelationResult
     total_samples: int
     analysis_date: datetime
     interpretation: str = Field(..., description="분석 해석")

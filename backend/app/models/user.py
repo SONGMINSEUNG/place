@@ -35,6 +35,7 @@ class User(Base):
     saved_keywords = relationship("SavedKeyword", back_populates="user")
     search_history = relationship("PlaceSearch", back_populates="user")
     input_data = relationship("UserInputData", back_populates="user")
+    activity_logs = relationship("UserActivityLog", back_populates="user")
 
     @property
     def daily_limit(self) -> int:

@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, Text, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Float, Text, ForeignKey, JSON, Boolean, Date
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, date
 from app.core.database import Base
 
 
@@ -314,7 +314,8 @@ class UserInputData(Base):
 
     # 사용자 입력 데이터
     inflow = Column(Integer, nullable=False)  # 유입수
-    reservation = Column(Integer, nullable=False)  # 예약수
+    # reservation 컬럼은 deprecated (하위 호환성을 위해 유지하되 사용하지 않음)
+    reservation = Column(Integer, nullable=True, default=0)  # deprecated
 
     # ADLOG에서 가져온 값
     n1 = Column(Float, nullable=True)  # 키워드 지수
@@ -332,3 +333,80 @@ class UserInputData(Base):
 
     # Relationships
     user = relationship("User", back_populates="input_data")
+
+
+class KeywordParameter(Base):
+    """
+    키워드별 파라미터 캐시 테이블
+    - ADLOG API 응답에서 추출한 N1, N2 파라미터 저장
+    - API 호출 없이 자체 계산에 활용
+    """
+    __tablename__ = "keyword_parameters"
+
+    id = Column(Integer, primary_key=True, index=True)
+    keyword = Column(String(255), unique=True, nullable=False, index=True)
+
+    # N1 파라미터 (키워드별 고정 상수 - 평균값)
+    n1_constant = Column(Float, nullable=True)
+    n1_std = Column(Float, nullable=True)  # 표준편차 (신뢰도 판단용)
+
+    # N2 파라미터 (N2 = slope * rank + intercept)
+    n2_slope = Column(Float, nullable=True)
+    n2_intercept = Column(Float, nullable=True)
+    n2_r_squared = Column(Float, nullable=True)  # 결정계수 (모델 적합도)
+
+    # 메타데이터
+    sample_count = Column(Integer, default=0)  # 학습에 사용된 샘플 수
+    last_trained_at = Column(DateTime, nullable=True)  # 마지막 학습 시간
+    api_call_count = Column(Integer, default=0)  # 총 API 호출 횟수
+    cache_hit_count = Column(Integer, default=0)  # 캐시 히트 횟수
+    is_reliable = Column(Boolean, default=False)  # 신뢰성 (sample_count >= 10)
+
+    # 타임스탬프
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserActivityLog(Base):
+    """
+    사용자 마케팅 활동 로그 테이블
+    - 블로그 리뷰, 방문자 리뷰, 저장수 증가, 유입수 증가 등 활동 기록
+    - D+1, D+7 결과 추적으로 활동-순위 상관관계 학습
+    """
+    __tablename__ = "user_activity_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    keyword = Column(String(255), nullable=False, index=True)
+    place_id = Column(String(50), nullable=True, index=True)
+    place_name = Column(String(255), nullable=True)
+    activity_date = Column(Date, nullable=False, index=True)
+
+    # 사용자가 기입한 활동 내역
+    blog_review_added = Column(Integer, default=0)  # 추가한 블로그 리뷰 수
+    visit_review_added = Column(Integer, default=0)  # 추가한 방문자 리뷰 수
+    save_added = Column(Integer, default=0)  # 증가한 저장수
+    inflow_added = Column(Integer, default=0)  # 증가한 유입수
+
+    # 당시 순위/지수 스냅샷
+    rank_before = Column(Integer, nullable=True)
+    n1_before = Column(Float, nullable=True)
+    n2_before = Column(Float, nullable=True)
+    n3_before = Column(Float, nullable=True)
+
+    # D+1 결과 (다음날 업데이트)
+    rank_after_1d = Column(Integer, nullable=True)
+    n3_after_1d = Column(Float, nullable=True)
+    measured_at_1d = Column(DateTime, nullable=True)
+
+    # D+7 결과 (7일 후 업데이트)
+    rank_after_7d = Column(Integer, nullable=True)
+    n3_after_7d = Column(Float, nullable=True)
+    measured_at_7d = Column(DateTime, nullable=True)
+
+    # 타임스탬프
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="activity_logs")

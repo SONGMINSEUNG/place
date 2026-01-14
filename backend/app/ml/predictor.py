@@ -74,7 +74,6 @@ class PredictionService:
     # 실제로는 DB의 model_features 테이블에서 로드
     DEFAULT_COEFFICIENTS = {
         "inflow": 0.000234,        # 유입수 1명당 효과
-        "reservation": 0.000912,   # 예약수 1건당 효과
         "blog_review": 0.002143,   # 블로그 리뷰 1개당 효과
         "visit_review": 0.000598,  # 방문자 리뷰 1개당 효과
     }
@@ -82,7 +81,6 @@ class PredictionService:
     # 추천 전략 기본 수량
     RECOMMENDED_AMOUNTS = {
         "inflow": {"amount": 100, "unit": "명"},
-        "reservation": {"amount": 20, "unit": "건"},
         "blog_review": {"amount": 15, "unit": "개"},
         "visit_review": {"amount": 50, "unit": "개"},
     }
@@ -107,7 +105,7 @@ class PredictionService:
         특정 항목의 점수 효과 계산
 
         Args:
-            feature: 항목명 (inflow, reservation, blog_review, visit_review)
+            feature: 항목명 (inflow, blog_review, visit_review)
             amount: 증가량
 
         Returns:
@@ -129,7 +127,7 @@ class PredictionService:
 
         Args:
             current_score: 현재 품질점수 (N2)
-            inputs: {inflow: 150, reservation: 25, blog_review: 10, visit_review: 30}
+            inputs: {inflow: 150, blog_review: 10, visit_review: 30}
             n1: 현재 키워드지수 (N3 계산용, 없으면 N3 계산 안함)
             current_n3_actual: 실제 API에서 받아온 현재 N3 값 (0-100 스케일)
 
@@ -208,7 +206,6 @@ class PredictionService:
             # 한글 타입명 변환
             type_names = {
                 "inflow": "유입수",
-                "reservation": "예약수",
                 "blog_review": "블로그리뷰",
                 "visit_review": "방문자리뷰",
             }

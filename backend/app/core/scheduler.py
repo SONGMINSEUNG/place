@@ -1,5 +1,9 @@
 """
 매일 자동으로 키워드 순위를 크롤링하는 스케줄러
+
+스케줄:
+- 오전 9시: 키워드 순위 자동 크롤링
+- 새벽 2시: 키워드 파라미터 자동 학습
 """
 import logging
 from datetime import datetime
@@ -16,6 +20,13 @@ logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 naver_service = NaverPlaceService()
+
+# 학습 상태 저장 (메모리)
+training_status = {
+    "is_running": False,
+    "last_result": None,
+    "last_run_at": None,
+}
 
 
 async def refresh_all_keywords_job():
@@ -91,13 +102,78 @@ async def refresh_all_keywords_job():
             await db.rollback()
 
 
+async def nightly_training_job():
+    """
+    새벽 2시 자동 학습 작업
+
+    - 저장된 ADLOG 데이터로 N1, N2 파라미터 재학습
+    - 학습 결과를 keyword_parameters 테이블에 저장
+    """
+    global training_status
+
+    if training_status["is_running"]:
+        logger.warning("[Scheduler] 학습 작업이 이미 실행 중입니다.")
+        return
+
+    logger.info(f"[Scheduler] 새벽 자동 학습 시작: {datetime.now()}")
+    training_status["is_running"] = True
+
+    try:
+        # 지연 import (순환 참조 방지)
+        from app.ml.trainer import keyword_trainer
+
+        async with async_session_maker() as db:
+            result = await keyword_trainer.train_all_keywords(db)
+
+            training_status["last_result"] = result
+            training_status["last_run_at"] = datetime.utcnow()
+
+            logger.info(
+                f"[Scheduler] 새벽 학습 완료: "
+                f"{result.get('trained', 0)}/{result.get('total_keywords', 0)} 키워드 학습, "
+                f"{result.get('reliable', 0)}개 신뢰성 확보"
+            )
+
+    except Exception as e:
+        logger.error(f"[Scheduler] 새벽 학습 실패: {str(e)}")
+        training_status["last_result"] = {
+            "success": False,
+            "error": str(e),
+        }
+
+    finally:
+        training_status["is_running"] = False
+
+
+def get_training_status() -> dict:
+    """학습 상태 조회"""
+    return {
+        "is_running": training_status["is_running"],
+        "last_result": training_status["last_result"],
+        "last_run_at": training_status["last_run_at"].isoformat() if training_status["last_run_at"] else None,
+    }
+
+
 def start_scheduler():
-    """스케줄러 시작 - 매일 오전 9시에 실행"""
-    # 매일 오전 9시에 실행
+    """
+    스케줄러 시작
+
+    - 매일 오전 9시: 키워드 순위 자동 크롤링
+    - 매일 새벽 2시: 키워드 파라미터 자동 학습
+    """
+    # 매일 오전 9시에 실행 (순위 크롤링)
     scheduler.add_job(
         refresh_all_keywords_job,
         CronTrigger(hour=9, minute=0),
         id="daily_keyword_refresh",
+        replace_existing=True
+    )
+
+    # 매일 새벽 2시에 실행 (파라미터 학습)
+    scheduler.add_job(
+        nightly_training_job,
+        CronTrigger(hour=2, minute=0),
+        id="nightly_training",
         replace_existing=True
     )
 
@@ -110,7 +186,9 @@ def start_scheduler():
     # )
 
     scheduler.start()
-    logger.info("[Scheduler] 스케줄러 시작됨 - 매일 오전 9시 자동 크롤링")
+    logger.info("[Scheduler] 스케줄러 시작됨")
+    logger.info("[Scheduler] - 매일 오전 9시: 키워드 순위 자동 크롤링")
+    logger.info("[Scheduler] - 매일 새벽 2시: 키워드 파라미터 자동 학습")
 
 
 def stop_scheduler():

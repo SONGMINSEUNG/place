@@ -1,6 +1,10 @@
 """
 Analyze API
 키워드 분석 엔드포인트
+
+Phase 1: 키워드 파라미터 캐싱 시스템 적용
+- 캐시 있고 신뢰할 수 있으면 자체 계산
+- 캐시 없거나 신뢰도 낮으면 ADLOG API 호출 후 파라미터 저장
 """
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +23,8 @@ from app.models.schemas import (
 from app.models.place import UserInputData
 from app.services.adlog_proxy import adlog_service, AdlogApiError
 from app.services.score_converter import score_converter, place_transformer
+from app.services.parameter_extractor import parameter_extractor, parameter_repository
+from app.services.formula_calculator import formula_calculator
 from app.ml.predictor import predictor
 from app.core.database import get_db
 import logging
@@ -38,12 +44,40 @@ async def analyze_keyword(
     - keyword: 검색 키워드 (필수)
     - place_name: 업체명 (선택) - 지정 시 해당 업체 하이라이트
     - inflow: 오늘 유입수 (선택)
-    - reservation: 오늘 예약수 (선택)
+
+    응답에 data_source 필드 추가:
+    - "api": ADLOG API에서 직접 조회
+    - "cache": 캐싱된 파라미터로 자체 계산
     """
     try:
-        # 1. ADLOG API 호출
+        data_source = "api"  # 기본값
+
+        # 1. 키워드 파라미터 캐시 확인
+        cached_params = await parameter_repository.get_by_keyword(db, request.keyword)
+
+        # 캐시가 있고 신뢰할 수 있으면 자체 계산 (Phase 1에서는 API 호출 후 저장만)
+        # TODO: Phase 2에서 자체 계산 로직 활성화
+        # if cached_params and formula_calculator.can_calculate(cached_params):
+        #     data_source = "cache"
+        #     await parameter_repository.increment_cache_hit(db, request.keyword)
+        #     # 자체 계산 로직...
+
+        # 2. ADLOG API 호출
         raw_data = await adlog_service.fetch_keyword_analysis(request.keyword)
         places = raw_data.get("places", [])
+
+        # 3. 파라미터 추출 및 저장 (백그라운드)
+        if places:
+            try:
+                extracted_params = parameter_extractor.extract_from_adlog_response(
+                    request.keyword, places
+                )
+                await parameter_repository.save_or_update(db, extracted_params)
+                await db.commit()
+                logger.info(f"Saved keyword parameters for: {request.keyword}")
+            except Exception as e:
+                logger.error(f"Failed to save keyword parameters: {str(e)}")
+                # 파라미터 저장 실패해도 분석 결과는 반환
 
         if not places:
             raise HTTPException(
@@ -77,8 +111,8 @@ async def analyze_keyword(
                             break
                     break
 
-        # 3.1 유입수/예약수가 있으면 사용자 데이터 저장
-        if my_place_data and (request.inflow is not None or request.reservation is not None):
+        # 3.1 유입수가 있으면 사용자 데이터 저장
+        if my_place_data and request.inflow is not None:
             try:
                 raw_indices = my_place_raw.get("raw_indices", {}) if my_place_raw else {}
                 metrics = my_place_raw.get("metrics", {}) if my_place_raw else {}
@@ -88,7 +122,6 @@ async def analyze_keyword(
                     place_id=my_place_data["place_id"],
                     place_name=my_place_data["name"],
                     inflow=request.inflow or 0,
-                    reservation=request.reservation or 0,
                     n1=raw_indices.get("n1"),
                     n2=raw_indices.get("n2"),
                     n3=raw_indices.get("n3"),
@@ -99,7 +132,7 @@ async def analyze_keyword(
                 )
                 db.add(user_data)
                 await db.commit()
-                logger.info(f"Saved user input data: keyword={request.keyword}, place={my_place_data['name']}, inflow={request.inflow}, reservation={request.reservation}")
+                logger.info(f"Saved user input data: keyword={request.keyword}, place={my_place_data['name']}, inflow={request.inflow}")
             except Exception as e:
                 logger.error(f"Failed to save user input data: {str(e)}")
                 # 저장 실패해도 분석 결과는 반환
@@ -164,6 +197,7 @@ async def analyze_keyword(
             recommendations=recommendations,
             competitors=competitors,
             all_places=all_places,
+            data_source=data_source,
         )
 
     except AdlogApiError as e:
@@ -177,8 +211,9 @@ async def analyze_keyword(
 @router.get("/analyze/{keyword}")
 async def analyze_keyword_get(
     keyword: str,
-    place_name: Optional[str] = None
+    place_name: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
 ):
     """GET 방식 분석 (간단 조회용)"""
     request = AnalyzeRequest(keyword=keyword, place_name=place_name)
-    return await analyze_keyword(request)
+    return await analyze_keyword(request, db)
