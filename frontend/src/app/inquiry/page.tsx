@@ -669,8 +669,6 @@ function InquiryPageContent() {
                     {loading ? <Loader2 style={{ width: '20px', height: '20px', animation: 'spin 1s linear infinite' }} /> : <Search style={{ width: '20px', height: '20px' }} />}
                     {loading ? "분석 중..." : "순위 분석하기"}
                   </button>
-
-                  {loading && <p style={{ textAlign: 'center', fontSize: '14px', color: '#64748b' }}>ADLOG API 분석 중...</p>}
                 </div>
               </>
             )}
@@ -760,12 +758,12 @@ function InquiryPageContent() {
         </div>
       )}
 
-      {/* ADLOG 3가지 지표 (N1, N2, N3 정규화 점수) */}
+      {/* 3가지 지표 (N1, N2, N3 정규화 점수) */}
       {myPlace && (
         <div style={{ ...styles.card, marginBottom: '24px' }}>
           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <BarChart3 style={{ width: '18px', height: '18px', color: '#6366f1' }} />
-            ADLOG 분석 지표 (0-100 정규화)
+            분석 지표 (0-100 정규화)
           </h3>
           <div className="adlog-scores-grid" style={{ display: 'grid', gap: '16px' }}>
             <div style={{ padding: '16px', background: '#f0f9ff', borderRadius: '12px', border: '1px solid #bae6fd' }}>
@@ -1048,7 +1046,7 @@ function InquiryPageContent() {
 
               {/* 안내 문구 */}
               <div style={{ marginTop: '16px', padding: '12px', background: '#f8fafc', borderRadius: '8px', fontSize: '12px', color: '#64748b' }}>
-                <strong>분석 기준:</strong> {targetSimResult.data_source === 'cache' ? '캐싱된 키워드 파라미터' : 'ADLOG API 실시간 데이터'}<br />
+                <strong>분석 기준:</strong> {targetSimResult.data_source === 'cache' ? '캐싱된 키워드 파라미터' : '실시간 데이터'}<br />
                 * 실제 순위는 경쟁사 변동에 따라 달라질 수 있습니다.
               </div>
             </div>

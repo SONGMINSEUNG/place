@@ -169,6 +169,14 @@ class PredictionService:
             predicted_n3_calc = calculate_n3(n1, predicted_score) * 100
             n3_change_ratio = predicted_n3_calc - current_n3_calc
 
+            # 버그 수정: N2가 증가했는데 N3가 감소하면 보정
+            # (2차 다항식의 한계로 높은 N2 영역에서 N3가 감소할 수 있음)
+            if total_effect > 0 and n3_change_ratio < 0:
+                # N2 증가 비율에 비례하여 N3도 증가하도록 보정
+                # N2가 1점 오르면 N3도 약 0.5점 오른다고 가정
+                n3_change_ratio = total_effect * 0.5
+                logger.info(f"N3 change corrected (was decreasing): {predicted_n3_calc - current_n3_calc} -> {n3_change_ratio}")
+
             # 실제 현재 N3에 변화량 적용
             predicted_n3 = current_n3 + n3_change_ratio
             n3_change = n3_change_ratio
