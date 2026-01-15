@@ -538,19 +538,131 @@ function InquiryPageContent() {
                     <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>쉼표로 구분하여 여러 키워드 입력</p>
                   </div>
 
-                  {/* 유입수 입력 */}
-                  <div>
-                    <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '8px' }}>
-                      유입수 <span style={{ color: '#94a3b8', fontWeight: '400' }}>(선택)</span>
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="네이버 통계 유입수"
-                      value={trafficCount}
-                      onChange={(e) => setTrafficCount(e.target.value)}
-                      style={styles.input}
-                    />
-                    <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>네이버 플레이스 통계에서 확인 가능합니다</p>
+                  {/* 오늘 어떤 작업을 하셨나요? - 활동 기입 섹션 (조회 전) */}
+                  <div style={{ padding: '20px', background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', borderRadius: '12px', border: '1px solid #e9d5ff' }}>
+                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#7c3aed', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <PenLine style={{ width: '18px', height: '18px', color: '#7c3aed' }} />
+                      오늘 어떤 작업을 하셨나요?
+                    </h4>
+
+                    {/* 경고 배너 */}
+                    <div style={{
+                      padding: '10px 14px',
+                      background: '#fef3c7',
+                      borderRadius: '8px',
+                      border: '1px solid #fcd34d',
+                      marginBottom: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}>
+                      <AlertTriangle style={{ width: '16px', height: '16px', color: '#d97706', flexShrink: 0 }} />
+                      <span style={{ fontSize: '12px', color: '#92400e' }}>
+                        모르거나 안했으면 체크하지 마세요.
+                      </span>
+                    </div>
+
+                    {/* 활동 체크박스 */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {/* 블로그 리뷰 */}
+                      <div style={{
+                        padding: '12px',
+                        background: activityBlogChecked ? '#ede9fe' : 'white',
+                        borderRadius: '8px',
+                        border: activityBlogChecked ? '2px solid #8b5cf6' : '1px solid #e5e7eb',
+                      }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={activityBlogChecked}
+                            onChange={(e) => {
+                              setActivityBlogChecked(e.target.checked);
+                              if (!e.target.checked) setActivityBlogCount(0);
+                            }}
+                            style={{ width: '18px', height: '18px', accentColor: '#7c3aed' }}
+                          />
+                          <span style={{ flex: 1, fontSize: '14px', fontWeight: '500', color: '#1e293b' }}>블로그 리뷰</span>
+                          {activityBlogChecked && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={activityBlogCount || ''}
+                                onChange={(e) => setActivityBlogCount(parseInt(e.target.value) || 0)}
+                                style={{ width: '60px', padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', textAlign: 'center' }}
+                              />
+                              <span style={{ fontSize: '13px', color: '#6b7280' }}>개</span>
+                            </div>
+                          )}
+                        </label>
+                      </div>
+
+                      {/* 저장수 */}
+                      <div style={{
+                        padding: '12px',
+                        background: activitySaveChecked ? '#ede9fe' : 'white',
+                        borderRadius: '8px',
+                        border: activitySaveChecked ? '2px solid #8b5cf6' : '1px solid #e5e7eb',
+                      }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={activitySaveChecked}
+                            onChange={(e) => {
+                              setActivitySaveChecked(e.target.checked);
+                              if (!e.target.checked) setActivitySaveCount(0);
+                            }}
+                            style={{ width: '18px', height: '18px', accentColor: '#7c3aed' }}
+                          />
+                          <span style={{ flex: 1, fontSize: '14px', fontWeight: '500', color: '#1e293b' }}>저장수</span>
+                          {activitySaveChecked && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={activitySaveCount || ''}
+                                onChange={(e) => setActivitySaveCount(parseInt(e.target.value) || 0)}
+                                style={{ width: '60px', padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', textAlign: 'center' }}
+                              />
+                              <span style={{ fontSize: '13px', color: '#6b7280' }}>개</span>
+                            </div>
+                          )}
+                        </label>
+                      </div>
+
+                      {/* 유입수 */}
+                      <div style={{
+                        padding: '12px',
+                        background: activityInflowChecked ? '#ede9fe' : 'white',
+                        borderRadius: '8px',
+                        border: activityInflowChecked ? '2px solid #8b5cf6' : '1px solid #e5e7eb',
+                      }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={activityInflowChecked}
+                            onChange={(e) => {
+                              setActivityInflowChecked(e.target.checked);
+                              if (!e.target.checked) setActivityInflowCount(0);
+                            }}
+                            style={{ width: '18px', height: '18px', accentColor: '#7c3aed' }}
+                          />
+                          <span style={{ flex: 1, fontSize: '14px', fontWeight: '500', color: '#1e293b' }}>유입수</span>
+                          {activityInflowChecked && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={activityInflowCount || ''}
+                                onChange={(e) => setActivityInflowCount(parseInt(e.target.value) || 0)}
+                                style={{ width: '60px', padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', textAlign: 'center' }}
+                              />
+                              <span style={{ fontSize: '13px', color: '#6b7280' }}>회</span>
+                            </div>
+                          )}
+                        </label>
+                      </div>
+                    </div>
                   </div>
 
                   <button onClick={handleRankSearch} disabled={loading} style={{ ...styles.btnPrimary, width: '100%', justifyContent: 'center', opacity: loading ? 0.6 : 1 }}>
@@ -713,7 +825,7 @@ function InquiryPageContent() {
         <div style={{ ...styles.card, marginBottom: '24px' }}>
           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <TrendingUp style={{ width: '18px', height: '18px', color: '#22c55e' }} />
-            경쟁사 비교 분석 (상위 {Math.min(allPlaces.length, 10)}개)
+            경쟁사 비교 분석 (상위 {Math.min(allPlaces.length, 50)}개)
           </h3>
           <div style={{ background: '#f8fafc', borderRadius: '12px', overflow: 'hidden', overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
@@ -730,7 +842,7 @@ function InquiryPageContent() {
                 </tr>
               </thead>
               <tbody>
-                {allPlaces.slice(0, 10).map((place: any) => {
+                {allPlaces.slice(0, 50).map((place: any) => {
                   const isMyPlace = myPlace && place.name === myPlace.name;
                   return (
                     <tr key={place.place_id} style={{
@@ -772,249 +884,6 @@ function InquiryPageContent() {
           <div style={{ marginTop: '12px', padding: '12px', background: '#f1f5f9', borderRadius: '8px', fontSize: '12px', color: '#64748b' }}>
             <strong>지표 설명:</strong> N1=키워드 관련성, N2=품질(리뷰/저장 등), N3=종합 경쟁력. 모든 점수는 0-100 정규화.
           </div>
-        </div>
-      )}
-
-      {/* 마케팅 제언 */}
-      {recommendations.length > 0 && (
-        <div style={{ ...styles.card, marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Target style={{ width: '18px', height: '18px', color: '#6366f1' }} />
-            마케팅 제언
-          </h3>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px', padding: '12px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
-            <strong>N3(경쟁력 점수)</strong>가 올라가면 순위가 상승합니다. 아래 활동으로 N3를 높여보세요.
-          </p>
-          <div className="recommendations-grid" style={{ display: 'grid', gap: '12px' }}>
-            {recommendations.map((rec: any, idx: number) => (
-              <div key={idx} style={{ padding: '16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '8px' }}>{rec.type}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                  <span style={{ fontSize: '14px', color: '#64748b' }}>{rec.amount}{rec.unit} 추가 시</span>
-                  <div style={{ textAlign: 'right' }}>
-                    {rec.n3_effect !== undefined && (
-                      <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#ca8a04' }}>N3 +{rec.n3_effect.toFixed(2)}점</div>
-                    )}
-                    <div style={{ fontSize: '13px', color: '#22c55e' }}>N2 +{rec.effect.toFixed(2)}점</div>
-                  </div>
-                </div>
-                {rec.description && (
-                  <div style={{ marginTop: '8px', fontSize: '12px', color: '#6366f1', fontWeight: '500' }}>
-                    {rec.description}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 오늘 어떤 작업을 하셨나요? - 활동 기입 섹션 */}
-      {myPlace && (
-        <div style={{ ...styles.card, marginBottom: '24px', background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', border: '1px solid #e9d5ff' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '600', color: '#7c3aed', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <PenLine style={{ width: '20px', height: '20px', color: '#7c3aed' }} />
-            오늘 어떤 작업을 하셨나요?
-          </h3>
-
-          {/* 경고 배너 */}
-          <div style={{
-            padding: '12px 16px',
-            background: '#fef3c7',
-            borderRadius: '8px',
-            border: '1px solid #fcd34d',
-            marginBottom: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-          }}>
-            <AlertTriangle style={{ width: '18px', height: '18px', color: '#d97706', flexShrink: 0 }} />
-            <span style={{ fontSize: '13px', color: '#92400e' }}>
-              모르거나 안했으면 체크하지 마세요. 정확한 데이터만 기록해야 분석이 정확합니다.
-            </span>
-          </div>
-
-          {/* 활동 체크박스 그리드 */}
-          <div className="activity-grid" style={{ display: 'grid', gap: '12px', marginBottom: '20px' }}>
-            {/* 블로그 리뷰 */}
-            <div style={{
-              padding: '16px',
-              background: activityBlogChecked ? '#ede9fe' : 'white',
-              borderRadius: '12px',
-              border: activityBlogChecked ? '2px solid #8b5cf6' : '1px solid #e5e7eb',
-              transition: 'all 0.2s',
-            }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={activityBlogChecked}
-                  onChange={(e) => {
-                    setActivityBlogChecked(e.target.checked);
-                    if (!e.target.checked) setActivityBlogCount(0);
-                  }}
-                  style={{ width: '20px', height: '20px', accentColor: '#7c3aed' }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '2px' }}>블로그 리뷰</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>블로그 체험단, 리뷰 의뢰 등</div>
-                </div>
-                {activityBlogChecked && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input
-                      type="number"
-                      min="0"
-                      value={activityBlogCount || ''}
-                      onChange={(e) => setActivityBlogCount(parseInt(e.target.value) || 0)}
-                      placeholder="0"
-                      style={{
-                        width: '70px',
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid #d1d5db',
-                        fontSize: '14px',
-                        textAlign: 'center',
-                      }}
-                    />
-                    <span style={{ fontSize: '14px', color: '#6b7280' }}>개</span>
-                  </div>
-                )}
-              </label>
-            </div>
-
-            {/* 저장수 */}
-            <div style={{
-              padding: '16px',
-              background: activitySaveChecked ? '#ede9fe' : 'white',
-              borderRadius: '12px',
-              border: activitySaveChecked ? '2px solid #8b5cf6' : '1px solid #e5e7eb',
-              transition: 'all 0.2s',
-            }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={activitySaveChecked}
-                  onChange={(e) => {
-                    setActivitySaveChecked(e.target.checked);
-                    if (!e.target.checked) setActivitySaveCount(0);
-                  }}
-                  style={{ width: '20px', height: '20px', accentColor: '#7c3aed' }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Save style={{ width: '16px', height: '16px', color: '#7c3aed' }} />
-                    저장수
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>플레이스 저장 증가 활동</div>
-                </div>
-                {activitySaveChecked && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input
-                      type="number"
-                      min="0"
-                      value={activitySaveCount || ''}
-                      onChange={(e) => setActivitySaveCount(parseInt(e.target.value) || 0)}
-                      placeholder="0"
-                      style={{
-                        width: '70px',
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid #d1d5db',
-                        fontSize: '14px',
-                        textAlign: 'center',
-                      }}
-                    />
-                    <span style={{ fontSize: '14px', color: '#6b7280' }}>개</span>
-                  </div>
-                )}
-              </label>
-            </div>
-
-            {/* 유입수 */}
-            <div style={{
-              padding: '16px',
-              background: activityInflowChecked ? '#ede9fe' : 'white',
-              borderRadius: '12px',
-              border: activityInflowChecked ? '2px solid #8b5cf6' : '1px solid #e5e7eb',
-              transition: 'all 0.2s',
-            }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={activityInflowChecked}
-                  onChange={(e) => {
-                    setActivityInflowChecked(e.target.checked);
-                    if (!e.target.checked) setActivityInflowCount(0);
-                  }}
-                  style={{ width: '20px', height: '20px', accentColor: '#7c3aed' }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: '600', color: '#1e293b', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <MousePointerClick style={{ width: '16px', height: '16px', color: '#7c3aed' }} />
-                    유입수
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>오늘 유입수 (네이버 통계 기준)</div>
-                </div>
-                {activityInflowChecked && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input
-                      type="number"
-                      min="0"
-                      value={activityInflowCount || ''}
-                      onChange={(e) => setActivityInflowCount(parseInt(e.target.value) || 0)}
-                      placeholder="0"
-                      style={{
-                        width: '70px',
-                        padding: '8px 12px',
-                        borderRadius: '8px',
-                        border: '1px solid #d1d5db',
-                        fontSize: '14px',
-                        textAlign: 'center',
-                      }}
-                    />
-                    <span style={{ fontSize: '14px', color: '#6b7280' }}>회</span>
-                  </div>
-                )}
-              </label>
-            </div>
-          </div>
-
-          {/* 제출 버튼 */}
-          <button
-            onClick={handleActivityLog}
-            disabled={activityLogging || activityLogged}
-            style={{
-              ...styles.btnPrimary,
-              background: activityLogged
-                ? 'linear-gradient(135deg, #22c55e, #16a34a)'
-                : 'linear-gradient(135deg, #7c3aed, #9333ea)',
-              width: '100%',
-              justifyContent: 'center',
-              opacity: activityLogging ? 0.6 : 1,
-            }}
-          >
-            {activityLogging ? (
-              <Loader2 style={{ width: '18px', height: '18px', animation: 'spin 1s linear infinite' }} />
-            ) : activityLogged ? (
-              <CheckCircle style={{ width: '18px', height: '18px' }} />
-            ) : (
-              <PenLine style={{ width: '18px', height: '18px' }} />
-            )}
-            {activityLogging ? '기록 중...' : activityLogged ? '오늘 활동 기록 완료!' : '활동 기록하기'}
-          </button>
-
-          {activityLogged && (
-            <div style={{
-              marginTop: '12px',
-              padding: '12px',
-              background: '#dcfce7',
-              borderRadius: '8px',
-              fontSize: '13px',
-              color: '#166534',
-              textAlign: 'center',
-            }}>
-              D+1 (내일), D+7 (7일 후) 순위 변화가 자동으로 측정됩니다.
-            </div>
-          )}
         </div>
       )}
 

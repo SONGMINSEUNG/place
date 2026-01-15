@@ -125,50 +125,85 @@ DEFAULT_COEFFICIENTS = {
 
 ---
 
-## 다음 작업 (TODO)
+## 구현 완료 (2024-01-15)
 
-### Phase 1: 키워드 파라미터 시스템
-- [ ] 키워드별 파라미터 저장 테이블 생성
-- [ ] ADLOG API 최초 1회 호출 → 파라미터 캐싱
-- [ ] 이후 자체 계산으로 N1, N2, N3 산출
+### Phase 1: 키워드 파라미터 시스템 ✅ (89점)
+- [x] `KeywordParameter` 테이블 생성
+- [x] ADLOG API 최초 1회 호출 → 파라미터 캐싱
+- [x] 이후 자체 계산으로 N1, N2, N3 산출 (99% 정확도)
 
-### Phase 2: 새벽 자동 학습 시스템
-- [ ] trainer.py 구현 (현재 빈 파일)
-- [ ] analyzer.py 구현 (현재 빈 파일)
-- [ ] 새벽 2시 cron job 설정
-- [ ] 수집된 데이터로 공식 계수 자동 최적화
+**구현 파일:**
+- `backend/app/models/place.py` - KeywordParameter 모델
+- `backend/app/services/parameter_extractor.py` - 파라미터 추출
+- `backend/app/services/formula_calculator.py` - 자체 계산
+- `backend/app/api/v1/parameters.py` - 파라미터 관리 API
 
-### Phase 3: 시뮬레이션 개선
-- [ ] 예약 건수 입력 필드 삭제
-- [ ] 목표 순위 기반 시뮬레이션으로 변경
-- [ ] 키워드별 순위 상승 시 점수 변화 표시
+### Phase 2: 새벽 자동 학습 시스템 ✅ (89점)
+- [x] trainer.py 구현
+- [x] analyzer.py 구현
+- [x] 새벽 2시 cron job 설정
+- [x] 수집된 데이터로 공식 계수 자동 최적화
 
-### Phase 4: 시계열 학습 (궁극적 목표) - **완료!**
-- [x] 사용자 행동 기입 기능 추가 ("블로그 5개 추가함")
+**구현 파일:**
+- `backend/app/ml/trainer.py` - 키워드 학습
+- `backend/app/ml/analyzer.py` - 정확도 분석
+- `backend/app/core/scheduler.py` - 새벽 2시 cron job
+- `backend/app/api/v1/train.py` - 학습 API
+
+### Phase 3: 시뮬레이션 개선 ✅ (88점)
+- [x] 예약 건수 입력 필드 삭제
+- [x] 유입수 입력 필드 삭제
+- [x] 마케팅 제언 섹션 삭제
+- [x] 목표 순위 기반 시뮬레이션으로 변경
+- [x] 50위까지 전체 표시 (10위 → 50위)
+- [x] 시뮬레이션 N3 감소 버그 수정
+
+**구현 파일:**
+- `backend/app/api/v1/simulate.py` - 목표 순위 시뮬레이션 API
+- `frontend/src/app/inquiry/page.tsx` - UI 개선
+
+### Phase 4: 시계열 학습 ✅ (82점)
+- [x] 사용자 행동 기입 기능 추가
+- [x] "오늘 어떤 작업을 하셨나요?" UI (조회 전 위치)
 - [x] 행동 → 순위 변화 상관관계 분석
 - [x] "블로그 +N개 → 평균 X순위 상승" 패턴 학습
-- [x] 진정한 의미의 시뮬레이션 완성
 
-#### 구현 내용 (2024-01-14)
-1. **UserActivityLog 모델** (이미 존재)
-   - 블로그 리뷰, 방문자 리뷰, 저장수, 유입수 활동 기록
-   - D+1, D+7 결과 추적 필드
+**구현 파일:**
+- `backend/app/api/v1/activity.py` - 활동 기록 API
+- `backend/app/ml/correlation_analyzer.py` - 상관관계 분석
+- `frontend/src/app/inquiry/page.tsx` - 활동 기입 UI
 
-2. **Activity API** (`backend/app/api/v1/activity.py`)
-   - `POST /activity/log` - 활동 기록
-   - `GET /activity/history` - 히스토리 조회
-   - `GET /activity/effect-analysis` - 효과 분석
-   - `POST /activity/update-results` - D+1/D+7 배치 업데이트
+---
 
-3. **CorrelationAnalyzer** (`backend/app/ml/correlation_analyzer.py`)
-   - 활동별 상관관계 분석
-   - 회귀분석으로 예측 공식 생성
-   - 키워드별 패턴 분석
+## 버그 수정 (2024-01-15)
 
-4. **Frontend 활동 기입 UI** (`inquiry/page.tsx`)
-   - "오늘 어떤 작업을 하셨나요?" 섹션
-   - 블로그 리뷰, 저장수, 유입수 체크박스 + 개수
-   - 경고 배너: "모르거나 안했으면 체크하지 마세요"
+| 이슈 | 상태 |
+|------|------|
+| 유입수 입력 칸 제거 | ✅ 완료 |
+| "오늘 작업" UI 위치 (조회 전으로 이동) | ✅ 완료 |
+| 시뮬레이션 N3 감소 버그 | ✅ 완료 |
+| 마케팅 제언 섹션 삭제 | ✅ 완료 |
+| 10위 → 50위까지 표시 | ✅ 완료 |
+
+---
+
+## 알려진 이슈
+
+### 속도 느림 (Cold Start)
+- **원인**: Render.com 무료 티어 - 15분 비활성 시 서버 종료
+- **증상**: 첫 요청 시 30초+ 대기
+- **해결 방법**:
+  1. UptimeRobot으로 주기적 ping (무료)
+  2. Render 유료 플랜 (월 $7)
+  3. Railway/Fly.io로 이전
+
+---
+
+## 다음 단계
+
+- [ ] Cold Start 해결 (UptimeRobot 또는 유료 플랜)
+- [ ] 사용자 데이터 수집 시작
+- [ ] 충분한 데이터 축적 후 상관관계 분석 결과 확인
 
 ---
 

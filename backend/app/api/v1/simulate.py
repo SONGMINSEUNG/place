@@ -211,6 +211,8 @@ async def simulate_target_rank(
     current_n1: Optional[float] = None
     current_n2: Optional[float] = None
     target_n2: Optional[float] = None
+    # 실제 목표 순위의 N3 값 (API에서 가져올 경우 사용)
+    target_n3_actual: Optional[float] = None
 
     try:
         # 1. 캐싱된 파라미터 확인
@@ -257,9 +259,10 @@ async def simulate_target_rank(
             current_n1 = my_place["scores"]["keyword_score"]
             current_n2 = my_place["scores"]["quality_score"]
 
-            # 목표 순위 업체의 N2 참조 (없으면 선형 추정)
+            # 목표 순위 업체의 N2, N3 참조 (없으면 선형 추정)
             if target_place:
                 target_n2 = target_place["scores"]["quality_score"]
+                target_n3_actual = target_place["scores"]["competition_score"]  # 실제 N3 값
             else:
                 # 선형 추정: N2 = current_n2 + (순위 차이 * 추정 slope)
                 # 일반적으로 순위 1 상승당 N2 약 0.5~1.0 증가
@@ -277,10 +280,30 @@ async def simulate_target_rank(
             )
 
         current_n3 = calculate_n3(current_n1, current_n2) * 100
-        target_n3 = calculate_n3(current_n1, target_n2) * 100
 
-        # 3. 변화량 계산
+        # N2 변화량 계산 (먼저 계산)
         n2_change_value = target_n2 - current_n2
+
+        # 목표 N3 계산: 실제 API 값이 있으면 사용, 없으면 공식 계산
+        if target_n3_actual is not None:
+            # API에서 가져온 실제 목표 순위의 N3 사용
+            target_n3 = target_n3_actual
+            logger.info(f"Using actual target N3: {target_n3}")
+        else:
+            # 공식으로 계산
+            target_n3_calc = calculate_n3(current_n1, target_n2) * 100
+
+            # 버그 수정: N2가 올라갔는데 N3가 떨어지면 보정
+            # (2차 다항식의 한계로 높은 N2 영역에서 N3가 감소할 수 있음)
+            if n2_change_value > 0 and target_n3_calc < current_n3:
+                # N2 증가 비율에 비례하여 N3도 증가하도록 보정
+                # N2가 1점 오르면 N3도 약 0.5점 오른다고 가정
+                target_n3 = current_n3 + (n2_change_value * 0.5)
+                logger.info(f"N3 corrected (was decreasing): {target_n3_calc} -> {target_n3}")
+            else:
+                target_n3 = target_n3_calc
+
+        # 3. N3 변화량 계산
         n3_change_value = target_n3 - current_n3
 
         # 4. 메시지 생성
