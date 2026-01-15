@@ -745,6 +745,7 @@ export interface AnalyzeResponse {
   recommendations: AnalyzeRecommendation[];
   competitors: AnalyzeCompetitor[];
   all_places: AnalyzePlace[];
+  data_source?: 'api' | 'cache';  // api: ADLOG API, cache: 네이버 크롤링 + 자체 계산
 }
 
 export interface SimulateInputs {

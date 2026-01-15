@@ -2,9 +2,9 @@
 Analyze API
 키워드 분석 엔드포인트
 
-Phase 1: 키워드 파라미터 캐싱 시스템 적용
-- 캐시 있고 신뢰할 수 있으면 자체 계산
-- 캐시 없거나 신뢰도 낮으면 ADLOG API 호출 후 파라미터 저장
+항상 네이버 크롤링으로 전체 업체 가져옴
+- 새 키워드: ADLOG API로 파라미터 추출 → 저장 → 네이버 크롤링
+- 캐시 키워드: 캐시된 파라미터 사용 → 네이버 크롤링
 """
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,9 +25,13 @@ from app.services.adlog_proxy import adlog_service, AdlogApiError
 from app.services.score_converter import score_converter, place_transformer
 from app.services.parameter_extractor import parameter_extractor, parameter_repository
 from app.services.formula_calculator import formula_calculator
+from app.services.naver_place import NaverPlaceService
 from app.ml.predictor import predictor
 from app.core.database import get_db
 import logging
+
+# 네이버 크롤링 서비스 인스턴스
+naver_service = NaverPlaceService()
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -39,64 +43,73 @@ async def analyze_keyword(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    키워드 분석 API
+    키워드 분석 API - 항상 네이버 크롤링으로 50개 업체 조회
 
     - keyword: 검색 키워드 (필수)
     - place_name: 업체명 (선택) - 지정 시 해당 업체 하이라이트
     - inflow: 오늘 유입수 (선택)
-
-    응답에 data_source 필드 추가:
-    - "api": ADLOG API에서 직접 조회
-    - "cache": 캐싱된 파라미터로 자체 계산
     """
     try:
-        data_source = "api"  # 기본값
-
         # 1. 키워드 파라미터 캐시 확인
         cached_params = await parameter_repository.get_by_keyword(db, request.keyword)
 
-        # 2. 캐시가 있고 신뢰할 수 있으면 자체 계산 (Phase 2: 활성화됨)
-        if cached_params and formula_calculator.can_calculate(cached_params):
-            data_source = "cache"
-            await parameter_repository.increment_cache_hit(db, request.keyword)
-            logger.info(f"Using cached parameters for keyword: {request.keyword}")
-
-            # 자체 계산으로 가상 places 생성 (순위 1-50까지)
-            places = []
-            for rank in range(1, 51):
-                indices = formula_calculator.calculate_all_indices(cached_params, rank)
-                places.append({
-                    "place_id": f"cached_{rank}",
-                    "name": f"순위 {rank} 업체 (캐시)",
-                    "rank": rank,
-                    "raw_indices": {
-                        "n1": indices["n1"],
-                        "n2": indices["n2"],
-                        "n3": indices["n3"],
-                    },
-                    "metrics": {
-                        "visit_count": 0,
-                        "blog_count": 0,
-                        "save_count": 0,
-                    },
-                })
-        else:
-            # 3. 캐시 없거나 신뢰도 낮으면 ADLOG API 호출
-            raw_data = await adlog_service.fetch_keyword_analysis(request.keyword)
-            places = raw_data.get("places", [])
-
-        # 4. 파라미터 추출 및 저장 (API 호출한 경우에만)
-        if data_source == "api" and places:
+        # 2. 캐시 없으면 ADLOG API로 파라미터 추출 (1회만)
+        if not cached_params or not formula_calculator.can_calculate(cached_params):
+            logger.info(f"New keyword, extracting parameters from ADLOG: {request.keyword}")
             try:
-                extracted_params = parameter_extractor.extract_from_adlog_response(
-                    request.keyword, places
-                )
-                await parameter_repository.save_or_update(db, extracted_params)
-                await db.commit()
-                logger.info(f"Saved keyword parameters for: {request.keyword}")
+                raw_data = await adlog_service.fetch_keyword_analysis(request.keyword)
+                adlog_places = raw_data.get("places", [])
+                if adlog_places:
+                    extracted_params = parameter_extractor.extract_from_adlog_response(
+                        request.keyword, adlog_places
+                    )
+                    await parameter_repository.save_or_update(db, extracted_params)
+                    await db.commit()
+                    cached_params = extracted_params
+                    logger.info(f"Saved keyword parameters for: {request.keyword}")
             except Exception as e:
-                logger.error(f"Failed to save keyword parameters: {str(e)}")
-                # 파라미터 저장 실패해도 분석 결과는 반환
+                logger.error(f"Failed to extract parameters from ADLOG: {str(e)}")
+        else:
+            await parameter_repository.increment_cache_hit(db, request.keyword)
+
+        # 3. 네이버 크롤링으로 전체 업체 가져오기
+        logger.info(f"Fetching places from Naver for: {request.keyword}")
+        try:
+            naver_places = await naver_service.search_places(request.keyword, max_results=300)
+            logger.info(f"Naver returned {len(naver_places)} places")
+        except Exception as e:
+            logger.error(f"Naver crawling failed: {e}")
+            naver_places = []
+
+        if not naver_places:
+            raise HTTPException(status_code=404, detail="검색 결과가 없습니다.")
+
+        # 4. 크롤링 결과에 N1, N2, N3 계산하여 추가
+        places = []
+        for idx, naver_place in enumerate(naver_places):
+            rank = idx + 1
+
+            # 파라미터가 있으면 자체 계산, 없으면 기본값
+            if cached_params and formula_calculator.can_calculate(cached_params):
+                indices = formula_calculator.calculate_all_indices(cached_params, rank)
+            else:
+                indices = {"n1": 50.0, "n2": 50.0, "n3": 50.0}  # 기본값
+
+            places.append({
+                "place_id": naver_place.get("place_id", f"naver_{rank}"),
+                "name": naver_place.get("name", f"업체 {rank}"),
+                "rank": rank,
+                "raw_indices": {
+                    "n1": indices["n1"],
+                    "n2": indices["n2"],
+                    "n3": indices["n3"],
+                },
+                "metrics": {
+                    "visit_count": naver_place.get("visitor_review_count", 0),
+                    "blog_count": naver_place.get("blog_review_count", 0),
+                    "save_count": naver_place.get("save_count", 0),
+                },
+            })
 
         if not places:
             raise HTTPException(
@@ -216,7 +229,6 @@ async def analyze_keyword(
             recommendations=recommendations,
             competitors=competitors,
             all_places=all_places,
-            data_source=data_source,
         )
 
     except AdlogApiError as e:
