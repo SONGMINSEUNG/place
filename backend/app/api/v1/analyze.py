@@ -55,19 +55,38 @@ async def analyze_keyword(
         # 1. 키워드 파라미터 캐시 확인
         cached_params = await parameter_repository.get_by_keyword(db, request.keyword)
 
-        # 캐시가 있고 신뢰할 수 있으면 자체 계산 (Phase 1에서는 API 호출 후 저장만)
-        # TODO: Phase 2에서 자체 계산 로직 활성화
-        # if cached_params and formula_calculator.can_calculate(cached_params):
-        #     data_source = "cache"
-        #     await parameter_repository.increment_cache_hit(db, request.keyword)
-        #     # 자체 계산 로직...
+        # 2. 캐시가 있고 신뢰할 수 있으면 자체 계산 (Phase 2: 활성화됨)
+        if cached_params and formula_calculator.can_calculate(cached_params):
+            data_source = "cache"
+            await parameter_repository.increment_cache_hit(db, request.keyword)
+            logger.info(f"Using cached parameters for keyword: {request.keyword}")
 
-        # 2. ADLOG API 호출
-        raw_data = await adlog_service.fetch_keyword_analysis(request.keyword)
-        places = raw_data.get("places", [])
+            # 자체 계산으로 가상 places 생성 (순위 1-50까지)
+            places = []
+            for rank in range(1, 51):
+                indices = formula_calculator.calculate_all_indices(cached_params, rank)
+                places.append({
+                    "place_id": f"cached_{rank}",
+                    "name": f"순위 {rank} 업체 (캐시)",
+                    "rank": rank,
+                    "raw_indices": {
+                        "n1": indices["n1"],
+                        "n2": indices["n2"],
+                        "n3": indices["n3"],
+                    },
+                    "metrics": {
+                        "visit_count": 0,
+                        "blog_count": 0,
+                        "save_count": 0,
+                    },
+                })
+        else:
+            # 3. 캐시 없거나 신뢰도 낮으면 ADLOG API 호출
+            raw_data = await adlog_service.fetch_keyword_analysis(request.keyword)
+            places = raw_data.get("places", [])
 
-        # 3. 파라미터 추출 및 저장 (백그라운드)
-        if places:
+        # 4. 파라미터 추출 및 저장 (API 호출한 경우에만)
+        if data_source == "api" and places:
             try:
                 extracted_params = parameter_extractor.extract_from_adlog_response(
                     request.keyword, places

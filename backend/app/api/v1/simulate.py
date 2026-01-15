@@ -210,6 +210,7 @@ async def simulate_target_rank(
     data_source = "cache"
     current_n1: Optional[float] = None
     current_n2: Optional[float] = None
+    current_n3_actual: Optional[float] = None  # 현재 업체의 실제 N3 값
     target_n2: Optional[float] = None
     # 실제 목표 순위의 N3 값 (API에서 가져올 경우 사용)
     target_n3_actual: Optional[float] = None
@@ -223,6 +224,11 @@ async def simulate_target_rank(
             current_n1 = formula_calculator.calculate_n1(params)
             current_n2 = formula_calculator.calculate_n2(params, request.current_rank)
             target_n2 = formula_calculator.calculate_n2(params, request.target_rank)
+
+            # 캐시에서도 현재 순위의 N3 계산
+            current_n3_actual = formula_calculator.calculate_n3_from_params(current_n1, current_n2)
+            # 목표 순위의 N3 계산
+            target_n3_actual = formula_calculator.calculate_n3_from_params(current_n1, target_n2)
 
             logger.info(f"Using cached parameters for keyword: {request.keyword}")
         else:
@@ -258,6 +264,7 @@ async def simulate_target_rank(
 
             current_n1 = my_place["scores"]["keyword_score"]
             current_n2 = my_place["scores"]["quality_score"]
+            current_n3_actual = my_place["scores"]["competition_score"]  # 현재 업체의 실제 N3 값
 
             # 목표 순위 업체의 N2, N3 참조 (없으면 선형 추정)
             if target_place:
@@ -279,7 +286,13 @@ async def simulate_target_rank(
                 detail="점수 계산에 필요한 데이터가 부족합니다."
             )
 
-        current_n3 = calculate_n3(current_n1, current_n2) * 100
+        # 현재 N3: 실제 값이 있으면 사용, 없으면 공식 계산
+        if current_n3_actual is not None:
+            current_n3 = current_n3_actual
+            logger.info(f"Using actual current N3: {current_n3}")
+        else:
+            current_n3 = calculate_n3(current_n1, current_n2) * 100
+            logger.info(f"Calculated current N3: {current_n3}")
 
         # N2 변화량 계산 (먼저 계산)
         n2_change_value = target_n2 - current_n2
