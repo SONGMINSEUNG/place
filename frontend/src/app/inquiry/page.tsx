@@ -880,7 +880,8 @@ function InquiryPageContent() {
             </table>
           </div>
           <div style={{ marginTop: '12px', padding: '12px', background: '#f1f5f9', borderRadius: '8px', fontSize: '12px', color: '#64748b' }}>
-            <strong>지표 설명:</strong> N1=키워드 관련성, N2=품질(리뷰/저장 등), N3=종합 경쟁력. 모든 점수는 0-100 정규화.
+            <strong>지표 설명:</strong> N1=키워드 관련성, N2=품질(리뷰/저장 등), N3=종합 경쟁력. 모든 점수는 0-100 정규화.<br />
+            <strong>데이터:</strong> {analyzeResult?.data_source === 'cache' ? '✅ 캐시 파라미터 사용' : '🔄 ADLOG 파라미터 추출 (최초 1회)'}
           </div>
         </div>
       )}

@@ -50,11 +50,14 @@ async def analyze_keyword(
     - inflow: 오늘 유입수 (선택)
     """
     try:
+        data_source = "cache"  # 기본값
+
         # 1. 키워드 파라미터 캐시 확인
         cached_params = await parameter_repository.get_by_keyword(db, request.keyword)
 
         # 2. 캐시 없으면 ADLOG API로 파라미터 추출 (1회만)
         if not cached_params or not formula_calculator.can_calculate(cached_params):
+            data_source = "api"  # 새 키워드는 ADLOG에서 파라미터 추출
             logger.info(f"New keyword, extracting parameters from ADLOG: {request.keyword}")
             try:
                 raw_data = await adlog_service.fetch_keyword_analysis(request.keyword)
@@ -229,6 +232,7 @@ async def analyze_keyword(
             recommendations=recommendations,
             competitors=competitors,
             all_places=all_places,
+            data_source=data_source,  # api: ADLOG 파라미터 추출, cache: 캐시 사용
         )
 
     except AdlogApiError as e:
