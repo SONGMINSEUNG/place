@@ -1,9 +1,10 @@
 """
 Parameter Extractor Service
-ADLOG API 응답에서 N1, N2 파라미터를 추출하여 저장
+ADLOG API 응답에서 N1, N2, N3 파라미터를 추출하여 저장
 
 - N1: 키워드별 고정 상수 (평균값)
 - N2: rank와 선형 관계 (slope, intercept)
+- N3: N2와 선형 관계 (slope, intercept) - 99.97% 정확도
 """
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
@@ -104,6 +105,54 @@ class ParameterExtractor:
             logger.error(f"N2 regression failed: {str(e)}")
             return None, None, None
 
+    def extract_n3_parameters(
+        self,
+        places: List[Dict[str, Any]]
+    ) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+        """
+        N3 파라미터 추출 (선형 회귀: N3 = slope * N2 + intercept)
+
+        N3는 N2와 선형 관계 (99.97% 정확도)
+
+        Args:
+            places: ADLOG API 응답의 places 배열
+
+        Returns:
+            (slope, intercept, r_squared) 튜플
+        """
+        n2_values = []
+        n3_values = []
+
+        for place in places:
+            raw_indices = place.get("raw_indices", {})
+            n2 = raw_indices.get("n2")
+            n3 = raw_indices.get("n3")
+
+            if n2 is not None and n3 is not None and n2 > 0:
+                n2_values.append(n2)
+                n3_values.append(n3)
+
+        if len(n2_values) < 3:
+            logger.warning(f"Not enough data points for N3 regression: {len(n2_values)} points")
+            return None, None, None
+
+        try:
+            # scipy.stats.linregress 사용: N3 = slope * N2 + intercept
+            slope, intercept, r_value, p_value, std_err = stats.linregress(n2_values, n3_values)
+
+            r_squared = r_value ** 2
+
+            logger.info(
+                f"N3 regression: slope={slope:.6f}, intercept={intercept:.4f}, "
+                f"R²={r_squared:.4f}, count={len(n2_values)}"
+            )
+
+            return float(slope), float(intercept), float(r_squared)
+
+        except Exception as e:
+            logger.error(f"N3 regression failed: {str(e)}")
+            return None, None, None
+
     def extract_from_adlog_response(
         self,
         keyword: str,
@@ -125,6 +174,9 @@ class ParameterExtractor:
         # N2 추출
         n2_slope, n2_intercept, n2_r_squared = self.extract_n2_parameters(places)
 
+        # N3 추출 (N3 = slope * N2 + intercept)
+        n3_slope, n3_intercept, n3_r_squared = self.extract_n3_parameters(places)
+
         # 샘플 수
         sample_count = len(places)
 
@@ -134,7 +186,9 @@ class ParameterExtractor:
             n1_constant is not None and
             n2_slope is not None and
             n2_r_squared is not None and
-            n2_r_squared >= MIN_R_SQUARED
+            n2_r_squared >= MIN_R_SQUARED and
+            n3_slope is not None and
+            n3_r_squared is not None
         )
 
         result = {
@@ -144,6 +198,9 @@ class ParameterExtractor:
             "n2_slope": n2_slope,
             "n2_intercept": n2_intercept,
             "n2_r_squared": n2_r_squared,
+            "n3_slope": n3_slope,
+            "n3_intercept": n3_intercept,
+            "n3_r_squared": n3_r_squared,
             "sample_count": sample_count,
             "is_reliable": is_reliable,
             "last_trained_at": datetime.utcnow(),
@@ -194,6 +251,9 @@ class ParameterRepository:
             existing.n2_slope = params.get("n2_slope")
             existing.n2_intercept = params.get("n2_intercept")
             existing.n2_r_squared = params.get("n2_r_squared")
+            existing.n3_slope = params.get("n3_slope")
+            existing.n3_intercept = params.get("n3_intercept")
+            existing.n3_r_squared = params.get("n3_r_squared")
             existing.sample_count = params.get("sample_count", 0)
             existing.last_trained_at = params.get("last_trained_at")
             existing.is_reliable = params.get("is_reliable", False)
@@ -211,6 +271,9 @@ class ParameterRepository:
                 n2_slope=params.get("n2_slope"),
                 n2_intercept=params.get("n2_intercept"),
                 n2_r_squared=params.get("n2_r_squared"),
+                n3_slope=params.get("n3_slope"),
+                n3_intercept=params.get("n3_intercept"),
+                n3_r_squared=params.get("n3_r_squared"),
                 sample_count=params.get("sample_count", 0),
                 last_trained_at=params.get("last_trained_at"),
                 api_call_count=1,

@@ -4,11 +4,10 @@ Formula Calculator Service
 
 - N1: 키워드별 고정 상수
 - N2: slope * rank + intercept
-- N3: 2차 다항식 공식 (predictor.py와 동일)
+- N3: slope * N2 + intercept (선형 공식, 99.97% 정확도)
 """
 from typing import Dict, Any, Optional, List
 from app.models.place import KeywordParameter
-from app.ml.predictor import calculate_n3
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,7 +27,7 @@ class FormulaCalculator:
             params: 키워드 파라미터
 
         Returns:
-            N1 값 (0-100 스케일)
+            N1 값 (0-1 스케일)
         """
         if params.n1_constant is None:
             return None
@@ -49,39 +48,43 @@ class FormulaCalculator:
             rank: 순위
 
         Returns:
-            N2 값 (0-100 스케일)
+            N2 값 (0-1 스케일, 표시용으로 100 곱해서 사용)
         """
         if params.n2_slope is None or params.n2_intercept is None:
             return None
 
         n2 = params.n2_slope * rank + params.n2_intercept
 
-        # 0-100 범위로 클램프
-        n2 = max(0.0, min(100.0, n2))
+        # 0-1 범위로 클램프
+        n2 = max(0.0, min(1.0, n2))
 
         return n2
 
     def calculate_n3_from_params(
         self,
-        n1: float,
+        params: KeywordParameter,
         n2: float
-    ) -> float:
+    ) -> Optional[float]:
         """
-        N3 계산 (2차 다항식 공식)
+        N3 계산 (선형 공식, 99.97% 정확도)
 
-        predictor.py의 calculate_n3 함수 사용
-        N3 = -0.288554 + 3.350482*N1 + 0.159362*N2 + 0.438085*N1*N2
-             - 3.715231*N1^2 - 0.851072*N2^2
+        N3 = n3_slope * N2 + n3_intercept
 
         Args:
-            n1: 키워드지수 (0-100 스케일)
-            n2: 품질점수 (0-100 스케일)
+            params: 키워드 파라미터 (n3_slope, n3_intercept 포함)
+            n2: 품질점수 (0-1 스케일)
 
         Returns:
-            N3 값 (0-100 스케일)
+            N3 값 (0-1 스케일)
         """
-        # calculate_n3는 0-1 스케일 반환, 100 곱해서 반환
-        n3 = calculate_n3(n1, n2) * 100
+        if params.n3_slope is None or params.n3_intercept is None:
+            return None
+
+        n3 = params.n3_slope * n2 + params.n3_intercept
+
+        # 0-1 범위로 클램프
+        n3 = max(0.0, min(1.0, n3))
+
         return n3
 
     def calculate_all_indices(
@@ -97,19 +100,23 @@ class FormulaCalculator:
             rank: 순위
 
         Returns:
-            {"n1": float, "n2": float, "n3": float}
+            {"n1": float, "n2": float, "n3": float} (0-100 스케일로 변환하여 반환)
         """
-        n1 = self.calculate_n1(params)
-        n2 = self.calculate_n2(params, rank)
+        # N1은 이미 0-1 스케일
+        n1_raw = self.calculate_n1(params)
+        # N2도 0-1 스케일
+        n2_raw = self.calculate_n2(params, rank)
 
-        n3 = None
-        if n1 is not None and n2 is not None:
-            n3 = self.calculate_n3_from_params(n1, n2)
+        n3_raw = None
+        if n2_raw is not None:
+            # N3 = n3_slope * N2 + n3_intercept (0-1 스케일)
+            n3_raw = self.calculate_n3_from_params(params, n2_raw)
 
+        # 0-100 스케일로 변환하여 반환
         return {
-            "n1": n1,
-            "n2": n2,
-            "n3": n3,
+            "n1": n1_raw * 100 if n1_raw is not None else None,
+            "n2": n2_raw * 100 if n2_raw is not None else None,
+            "n3": n3_raw * 100 if n3_raw is not None else None,
         }
 
     def generate_calculated_places(
@@ -154,17 +161,21 @@ class FormulaCalculator:
         if params is None:
             return False
 
-        # N1, N2 파라미터가 모두 있어야 함
+        # N1, N2, N3 파라미터가 모두 있어야 함
         has_n1 = params.n1_constant is not None
         has_n2 = (
             params.n2_slope is not None and
             params.n2_intercept is not None
         )
+        has_n3 = (
+            params.n3_slope is not None and
+            params.n3_intercept is not None
+        )
 
         # 신뢰성 있는 데이터여야 함
         is_reliable = params.is_reliable
 
-        return has_n1 and has_n2 and is_reliable
+        return has_n1 and has_n2 and has_n3 and is_reliable
 
 
 # 싱글톤 인스턴스

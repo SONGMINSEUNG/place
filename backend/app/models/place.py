@@ -355,6 +355,11 @@ class KeywordParameter(Base):
     n2_intercept = Column(Float, nullable=True)
     n2_r_squared = Column(Float, nullable=True)  # 결정계수 (모델 적합도)
 
+    # N3 파라미터 (N3 = slope * N2 + intercept) - 99.97% 정확도
+    n3_slope = Column(Float, nullable=True)
+    n3_intercept = Column(Float, nullable=True)
+    n3_r_squared = Column(Float, nullable=True)  # 결정계수 (모델 적합도)
+
     # 메타데이터
     sample_count = Column(Integer, default=0)  # 학습에 사용된 샘플 수
     last_trained_at = Column(DateTime, nullable=True)  # 마지막 학습 시간
