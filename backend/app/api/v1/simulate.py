@@ -297,24 +297,23 @@ async def simulate_target_rank(
         # N2 변화량 계산 (먼저 계산)
         n2_change_value = target_n2 - current_n2
 
-        # 목표 N3 계산: 실제 API 값이 있으면 사용, 없으면 공식 계산
+        # 목표 N3 계산
         if target_n3_actual is not None:
-            # API에서 가져온 실제 목표 순위의 N3 사용
-            target_n3 = target_n3_actual
-            logger.info(f"Using actual target N3: {target_n3}")
+            target_n3_calc = target_n3_actual
+            logger.info(f"Using calculated target N3: {target_n3_calc}")
         else:
-            # 공식으로 계산
             target_n3_calc = calculate_n3(current_n1, target_n2) * 100
+            logger.info(f"Formula calculated target N3: {target_n3_calc}")
 
-            # 버그 수정: N2가 올라갔는데 N3가 떨어지면 보정
-            # (2차 다항식의 한계로 높은 N2 영역에서 N3가 감소할 수 있음)
-            if n2_change_value > 0 and target_n3_calc < current_n3:
-                # N2 증가 비율에 비례하여 N3도 증가하도록 보정
-                # N2가 1점 오르면 N3도 약 0.5점 오른다고 가정
-                target_n3 = current_n3 + (n2_change_value * 0.5)
-                logger.info(f"N3 corrected (was decreasing): {target_n3_calc} -> {target_n3}")
-            else:
-                target_n3 = target_n3_calc
+        # 버그 수정: N2가 올라갔는데 N3가 떨어지면 보정 (항상 적용)
+        # (2차 다항식의 한계로 높은 N2 영역에서 N3가 감소할 수 있음)
+        if n2_change_value > 0 and target_n3_calc < current_n3:
+            # N2 증가 비율에 비례하여 N3도 증가하도록 보정
+            # N2가 1점 오르면 N3도 약 0.5점 오른다고 가정
+            target_n3 = current_n3 + (n2_change_value * 0.5)
+            logger.info(f"N3 corrected (was decreasing): {target_n3_calc} -> {target_n3}")
+        else:
+            target_n3 = target_n3_calc
 
         # 3. N3 변화량 계산
         n3_change_value = target_n3 - current_n3
