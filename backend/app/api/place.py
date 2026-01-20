@@ -791,6 +791,30 @@ async def trigger_saved_keywords_refresh_now():
     return {"message": "저장된 키워드 크롤링 시작됨 (백그라운드에서 실행중)"}
 
 
+@router.post("/scheduler/update-activity-results-now")
+async def trigger_activity_results_update_now():
+    """Activity D+1/D+7 결과 업데이트 즉시 실행"""
+    import asyncio
+    asyncio.create_task(place_scheduler.update_activity_results())
+    return {"message": "Activity 결과 업데이트 시작됨 (백그라운드에서 실행중)"}
+
+
+@router.post("/scheduler/cleanup-expired-now")
+async def trigger_cleanup_expired_now():
+    """만료 데이터 정리 즉시 실행 (30일 경과 데이터 삭제)"""
+    import asyncio
+    asyncio.create_task(place_scheduler.cleanup_expired_data())
+    return {"message": "만료 데이터 정리 시작됨 (백그라운드에서 실행중)"}
+
+
+@router.post("/scheduler/training-now")
+async def trigger_training_now():
+    """키워드 파라미터 학습 즉시 실행"""
+    import asyncio
+    asyncio.create_task(place_scheduler.nightly_training_job())
+    return {"message": "키워드 파라미터 학습 시작됨 (백그라운드에서 실행중)"}
+
+
 # ============== 순위 요소 분석 API ==============
 
 @router.get("/ranking-factors/{keyword}")

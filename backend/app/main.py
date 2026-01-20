@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import init_db
 from app.api import api_router
+from app.services.scheduler import place_scheduler
 import logging
 
 # 로깅 설정
@@ -21,12 +22,27 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Place Analytics API...")
     await init_db()
     logger.info("Database initialized")
+
+    # 스케줄러 시작
+    try:
+        place_scheduler.start()
+        logger.info("Scheduler started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start scheduler: {e}")
+
     logger.info("API Ready")
 
     yield
 
     # Shutdown
     logger.info("Shutting down Place Analytics API...")
+
+    # 스케줄러 종료
+    try:
+        place_scheduler.stop()
+        logger.info("Scheduler stopped")
+    except Exception as e:
+        logger.error(f"Error stopping scheduler: {e}")
 
 
 app = FastAPI(

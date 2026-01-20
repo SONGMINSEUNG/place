@@ -1,17 +1,27 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import select
+from sqlalchemy import select, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
-from app.models.place import TrackedPlace, PlaceStats, RankHistory, SavedKeyword
+from app.models.place import (
+    TrackedPlace, PlaceStats, RankHistory, SavedKeyword,
+    UserActivityLog, AdlogTrainingData
+)
 from app.services.naver_place import NaverPlaceService
 
 logger = logging.getLogger(__name__)
+
+# 학습 상태 저장 (메모리)
+training_status = {
+    "is_running": False,
+    "last_result": None,
+    "last_run_at": None,
+}
 
 
 class PlaceScheduler:
@@ -30,7 +40,7 @@ class PlaceScheduler:
 
         self.scheduler = AsyncIOScheduler()
 
-        # 매일 오전 9시에 실행 (KST)
+        # 매일 오전 9시에 실행 (KST) - 일일 데이터 수집
         self.scheduler.add_job(
             self.collect_daily_data,
             CronTrigger(hour=9, minute=0),
@@ -57,9 +67,44 @@ class PlaceScheduler:
             replace_existing=True
         )
 
+        # 매일 새벽 2시에 키워드 파라미터 자동 학습
+        self.scheduler.add_job(
+            self.nightly_training_job,
+            CronTrigger(hour=2, minute=0),
+            id="nightly_training",
+            name="Nightly Parameter Training",
+            replace_existing=True
+        )
+
+        # 매일 오전 10시에 Activity D+1/D+7 결과 업데이트
+        self.scheduler.add_job(
+            self.update_activity_results,
+            CronTrigger(hour=10, minute=0),
+            id="activity_results_update",
+            name="Activity D+1/D+7 Results Update",
+            replace_existing=True
+        )
+
+        # 매일 새벽 3시에 30일 경과 데이터 자동 삭제
+        self.scheduler.add_job(
+            self.cleanup_expired_data,
+            CronTrigger(hour=3, minute=30),
+            id="cleanup_expired_data",
+            name="Cleanup Expired Data (30 days)",
+            replace_existing=True
+        )
+
         self.scheduler.start()
         self._is_running = True
-        logger.info("Place Scheduler started - Daily collection at 09:00, Saved keywords refresh at 09:00, Rank check every 6 hours")
+        logger.info("=" * 60)
+        logger.info("Place Scheduler started with following jobs:")
+        logger.info("  - 02:00 | Nightly Parameter Training")
+        logger.info("  - 03:30 | Cleanup Expired Data (30 days)")
+        logger.info("  - 09:00 | Daily Data Collection")
+        logger.info("  - 09:00 | Saved Keywords Refresh")
+        logger.info("  - 10:00 | Activity D+1/D+7 Results Update")
+        logger.info("  - 03,09,15,21:00 | Periodic Rank Check")
+        logger.info("=" * 60)
 
     def stop(self):
         """스케줄러 종료"""
@@ -344,10 +389,196 @@ class PlaceScheduler:
                 logger.error(f"[SavedKeywords] 전체 크롤링 실패: {str(e)}")
                 await db.rollback()
 
+    async def nightly_training_job(self):
+        """
+        새벽 2시 자동 학습 작업
+
+        - 저장된 ADLOG 데이터로 N1, N2 파라미터 재학습
+        - 학습 결과를 keyword_parameters 테이블에 저장
+        """
+        global training_status
+
+        if training_status["is_running"]:
+            logger.warning("[Scheduler] 학습 작업이 이미 실행 중입니다.")
+            return
+
+        logger.info(f"[Scheduler] 새벽 자동 학습 시작: {datetime.now()}")
+        training_status["is_running"] = True
+
+        try:
+            # 지연 import (순환 참조 방지)
+            from app.ml.trainer import keyword_trainer
+
+            async with AsyncSessionLocal() as db:
+                result = await keyword_trainer.train_all_keywords(db)
+
+                training_status["last_result"] = result
+                training_status["last_run_at"] = datetime.now()
+
+                logger.info(
+                    f"[Scheduler] 새벽 학습 완료: "
+                    f"{result.get('trained', 0)}/{result.get('total_keywords', 0)} 키워드 학습, "
+                    f"{result.get('reliable', 0)}개 신뢰성 확보"
+                )
+
+        except Exception as e:
+            logger.error(f"[Scheduler] 새벽 학습 실패: {str(e)}")
+            training_status["last_result"] = {
+                "success": False,
+                "error": str(e),
+            }
+
+        finally:
+            training_status["is_running"] = False
+
+    async def update_activity_results(self):
+        """
+        D+1, D+7 결과 업데이트 (매일 10시 실행)
+
+        기록된 활동의 결과를 업데이트합니다.
+        - D+1: 활동일 기준 1일 후 순위/N3
+        - D+7: 활동일 기준 7일 후 순위/N3
+        """
+        logger.info("[Scheduler] Activity D+1/D+7 결과 업데이트 시작...")
+
+        try:
+            # 지연 import (순환 참조 방지)
+            from app.services.adlog_proxy import adlog_service, AdlogApiError
+
+            async with AsyncSessionLocal() as db:
+                today = date.today()
+                updated_count = 0
+
+                # D+1 업데이트 대상 조회 (어제 활동, 아직 D+1 미측정)
+                d1_target_date = today - timedelta(days=1)
+                d1_query = select(UserActivityLog).where(
+                    and_(
+                        UserActivityLog.activity_date == d1_target_date,
+                        UserActivityLog.rank_after_1d.is_(None),
+                    )
+                )
+
+                result = await db.execute(d1_query)
+                d1_logs = result.scalars().all()
+
+                logger.info(f"[Scheduler] D+1 업데이트 대상: {len(d1_logs)}개")
+
+                for log in d1_logs:
+                    try:
+                        raw_data = await adlog_service.fetch_keyword_analysis(log.keyword)
+                        places = raw_data.get("places", [])
+
+                        for place in places:
+                            place_match = False
+                            if log.place_id and place.get("place_id") == log.place_id:
+                                place_match = True
+                            elif log.place_name and log.place_name.lower() in place.get("name", "").lower():
+                                place_match = True
+
+                            if place_match:
+                                raw_indices = place.get("raw_indices", {})
+                                log.rank_after_1d = place.get("rank")
+                                log.n3_after_1d = raw_indices.get("n3")
+                                log.measured_at_1d = datetime.now()
+                                updated_count += 1
+                                logger.info(f"[Scheduler] D+1 업데이트: {log.keyword} - 순위 {log.rank_after_1d}")
+                                break
+
+                        # 요청 간격 (네이버 차단 방지)
+                        await asyncio.sleep(2)
+
+                    except AdlogApiError as e:
+                        logger.warning(f"[Scheduler] D+1 조회 실패 - {log.keyword}: {str(e)}")
+                    except Exception as e:
+                        logger.error(f"[Scheduler] D+1 처리 오류 - {log.keyword}: {str(e)}")
+
+                # D+7 업데이트 대상 조회 (7일 전 활동, 아직 D+7 미측정)
+                d7_target_date = today - timedelta(days=7)
+                d7_query = select(UserActivityLog).where(
+                    and_(
+                        UserActivityLog.activity_date == d7_target_date,
+                        UserActivityLog.rank_after_7d.is_(None),
+                    )
+                )
+
+                result = await db.execute(d7_query)
+                d7_logs = result.scalars().all()
+
+                logger.info(f"[Scheduler] D+7 업데이트 대상: {len(d7_logs)}개")
+
+                for log in d7_logs:
+                    try:
+                        raw_data = await adlog_service.fetch_keyword_analysis(log.keyword)
+                        places = raw_data.get("places", [])
+
+                        for place in places:
+                            place_match = False
+                            if log.place_id and place.get("place_id") == log.place_id:
+                                place_match = True
+                            elif log.place_name and log.place_name.lower() in place.get("name", "").lower():
+                                place_match = True
+
+                            if place_match:
+                                raw_indices = place.get("raw_indices", {})
+                                log.rank_after_7d = place.get("rank")
+                                log.n3_after_7d = raw_indices.get("n3")
+                                log.measured_at_7d = datetime.now()
+                                updated_count += 1
+                                logger.info(f"[Scheduler] D+7 업데이트: {log.keyword} - 순위 {log.rank_after_7d}")
+                                break
+
+                        # 요청 간격 (네이버 차단 방지)
+                        await asyncio.sleep(2)
+
+                    except AdlogApiError as e:
+                        logger.warning(f"[Scheduler] D+7 조회 실패 - {log.keyword}: {str(e)}")
+                    except Exception as e:
+                        logger.error(f"[Scheduler] D+7 처리 오류 - {log.keyword}: {str(e)}")
+
+                await db.commit()
+                logger.info(
+                    f"[Scheduler] Activity 결과 업데이트 완료: "
+                    f"D+1 {len(d1_logs)}건 처리, D+7 {len(d7_logs)}건 처리, "
+                    f"총 {updated_count}건 업데이트"
+                )
+
+        except Exception as e:
+            logger.error(f"[Scheduler] Activity 결과 업데이트 실패: {str(e)}")
+
+    async def cleanup_expired_data(self):
+        """
+        30일 경과 데이터 자동 삭제
+
+        AdlogTrainingData 테이블에서 expires_at이 지난 데이터를 삭제합니다.
+        """
+        logger.info("[Scheduler] 만료 데이터 정리 시작...")
+
+        try:
+            async with AsyncSessionLocal() as db:
+                now = datetime.now()
+
+                # 만료된 AdlogTrainingData 삭제
+                delete_query = delete(AdlogTrainingData).where(
+                    AdlogTrainingData.expires_at < now
+                )
+
+                result = await db.execute(delete_query)
+                deleted_count = result.rowcount
+
+                await db.commit()
+
+                if deleted_count > 0:
+                    logger.info(f"[Scheduler] 만료 데이터 정리 완료: {deleted_count}건 삭제")
+                else:
+                    logger.info("[Scheduler] 만료 데이터 정리 완료: 삭제할 데이터 없음")
+
+        except Exception as e:
+            logger.error(f"[Scheduler] 만료 데이터 정리 실패: {str(e)}")
+
     def get_status(self) -> dict:
         """스케줄러 상태 조회"""
         if not self.scheduler:
-            return {"running": False, "jobs": []}
+            return {"running": False, "jobs": [], "training_status": training_status}
 
         jobs = []
         for job in self.scheduler.get_jobs():
@@ -359,8 +590,22 @@ class PlaceScheduler:
 
         return {
             "running": self._is_running,
-            "jobs": jobs
+            "jobs": jobs,
+            "training_status": {
+                "is_running": training_status["is_running"],
+                "last_result": training_status["last_result"],
+                "last_run_at": training_status["last_run_at"].isoformat() if training_status["last_run_at"] else None,
+            }
         }
+
+
+def get_training_status() -> dict:
+    """학습 상태 조회 (외부 호환용)"""
+    return {
+        "is_running": training_status["is_running"],
+        "last_result": training_status["last_result"],
+        "last_run_at": training_status["last_run_at"].isoformat() if training_status["last_run_at"] else None,
+    }
 
 
 # 전역 스케줄러 인스턴스

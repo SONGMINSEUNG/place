@@ -16,7 +16,7 @@ from datetime import datetime
 import logging
 
 from app.core.database import get_db
-from app.core.scheduler import get_training_status, nightly_training_job
+from app.services.scheduler import get_training_status, place_scheduler
 from app.ml.trainer import keyword_trainer
 from app.ml.analyzer import model_analyzer
 
@@ -151,7 +151,7 @@ async def train_all(
                 detail="이미 학습 작업이 실행 중입니다."
             )
 
-        background_tasks.add_task(nightly_training_job)
+        background_tasks.add_task(place_scheduler.nightly_training_job)
 
         return BatchTrainingResultResponse(
             success=True,
