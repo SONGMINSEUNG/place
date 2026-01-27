@@ -22,8 +22,8 @@ if is_postgres:
     engine_kwargs["poolclass"] = NullPool
     # asyncpg 연결 옵션: 타임아웃 설정 (Supabase 일시 중지 대비)
     engine_kwargs["connect_args"] = {
-        "timeout": 120,  # 연결 타임아웃 120초 (Supabase resume 대비)
-        "command_timeout": 60,  # 쿼리 타임아웃 60초
+        "timeout": 30,  # 연결 타임아웃 30초
+        "command_timeout": 30,  # 쿼리 타임아웃 30초
     }
 
 engine = create_async_engine(db_url, **engine_kwargs)
