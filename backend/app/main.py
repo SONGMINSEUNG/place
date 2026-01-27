@@ -53,23 +53,22 @@ app = FastAPI(
 )
 
 # CORS 설정
-# 환경변수 ALLOWED_ORIGINS가 있으면 사용, 없으면 로컬 개발용 기본값
+# 로컬 개발용 + 프로덕션 도메인 포함
 default_origins = [
+    # 로컬 개발 환경
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:8080",
     "http://127.0.0.1:8080",
+    # 프로덕션 환경 (Vercel)
+    "https://place-chi.vercel.app",
+    "https://place-analytics.vercel.app",
 ]
 
-# settings.allowed_origins_list가 기본값이 아니면 환경변수 사용
-origins = settings.allowed_origins_list if settings.ALLOWED_ORIGINS != "http://localhost:3000,https://your-domain.com" else default_origins
-
-# 프로덕션 환경에서 추가 origins 병합
-if settings.ALLOWED_ORIGINS and settings.ALLOWED_ORIGINS != "http://localhost:3000,https://your-domain.com":
-    # 환경변수에서 설정된 origins와 기본값 병합
-    origins = list(set(default_origins + settings.allowed_origins_list))
+# 환경변수에서 추가 origins 병합
+origins = list(set(default_origins + settings.allowed_origins_list))
 
 logger.info(f"CORS allowed origins: {origins}")
 
