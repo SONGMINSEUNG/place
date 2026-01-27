@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.core.config import settings
-from app.core.database import init_db, check_db_connection
+from app.core.database import init_db
 from app.api import api_router
 from app.services.scheduler import place_scheduler
 import logging
@@ -20,29 +20,15 @@ async def lifespan(app: FastAPI):
     """앱 시작/종료 시 실행"""
     # Startup
     logger.info("Starting Place Analytics API...")
+    await init_db()
+    logger.info("Database initialized")
 
-    # 데이터베이스 초기화 (실패해도 서버 시작)
-    db_initialized = False
+    # 스케줄러 시작
     try:
-        db_initialized = await init_db(max_retries=3, retry_delay=5.0)
-        if db_initialized:
-            logger.info("Database initialized successfully")
-        else:
-            logger.warning("Database initialization failed - API will start without DB connection")
-            logger.warning("Database features will be unavailable until connection is restored")
+        place_scheduler.start()
+        logger.info("Scheduler started successfully")
     except Exception as e:
-        logger.error(f"Database initialization error: {e}")
-        logger.warning("API will start without DB connection")
-
-    # 스케줄러 시작 (DB 연결된 경우에만)
-    if db_initialized:
-        try:
-            place_scheduler.start()
-            logger.info("Scheduler started successfully")
-        except Exception as e:
-            logger.error(f"Failed to start scheduler: {e}")
-    else:
-        logger.warning("Scheduler not started - database connection required")
+        logger.error(f"Failed to start scheduler: {e}")
 
     logger.info("API Ready")
 
@@ -50,8 +36,6 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down Place Analytics API...")
-
-    # 스케줄러 종료
     try:
         place_scheduler.stop()
         logger.info("Scheduler stopped")
@@ -67,28 +51,25 @@ app = FastAPI(
 )
 
 # CORS 설정
-# 로컬 개발용 + 프로덕션 도메인 포함
 default_origins = [
-    # 로컬 개발 환경
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:8080",
     "http://127.0.0.1:8080",
-    # 프로덕션 환경 (Vercel)
+    # 프로덕션 환경
     "https://place-chi.vercel.app",
     "https://place-analytics.vercel.app",
 ]
 
-# 환경변수에서 추가 origins 병합
 origins = list(set(default_origins + settings.allowed_origins_list))
 
 logger.info(f"CORS allowed origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # 명시적 origin 목록
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
@@ -110,12 +91,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """헬스체크 - DB 연결 상태 포함"""
-    db_connected = await check_db_connection()
-    return {
-        "status": "healthy",
-        "database": "connected" if db_connected else "disconnected"
-    }
+    return {"status": "healthy"}
 
 
 if __name__ == "__main__":
