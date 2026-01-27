@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.core.config import settings
-from app.core.database import init_db
+from app.core.database import init_db, check_db_connection
 from app.api import api_router
 from app.services.scheduler import place_scheduler
 import logging
@@ -20,15 +20,29 @@ async def lifespan(app: FastAPI):
     """앱 시작/종료 시 실행"""
     # Startup
     logger.info("Starting Place Analytics API...")
-    await init_db()
-    logger.info("Database initialized")
 
-    # 스케줄러 시작
+    # 데이터베이스 초기화 (실패해도 서버 시작)
+    db_initialized = False
     try:
-        place_scheduler.start()
-        logger.info("Scheduler started successfully")
+        db_initialized = await init_db(max_retries=3, retry_delay=5.0)
+        if db_initialized:
+            logger.info("Database initialized successfully")
+        else:
+            logger.warning("Database initialization failed - API will start without DB connection")
+            logger.warning("Database features will be unavailable until connection is restored")
     except Exception as e:
-        logger.error(f"Failed to start scheduler: {e}")
+        logger.error(f"Database initialization error: {e}")
+        logger.warning("API will start without DB connection")
+
+    # 스케줄러 시작 (DB 연결된 경우에만)
+    if db_initialized:
+        try:
+            place_scheduler.start()
+            logger.info("Scheduler started successfully")
+        except Exception as e:
+            logger.error(f"Failed to start scheduler: {e}")
+    else:
+        logger.warning("Scheduler not started - database connection required")
 
     logger.info("API Ready")
 
@@ -96,7 +110,12 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """헬스체크 - DB 연결 상태 포함"""
+    db_connected = await check_db_connection()
+    return {
+        "status": "healthy",
+        "database": "connected" if db_connected else "disconnected"
+    }
 
 
 if __name__ == "__main__":
