@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     # ===========================================
     # CORS Settings
     # ===========================================
-    ALLOWED_ORIGINS: str = "http://localhost:3000,https://your-domain.com"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,https://place-chi.vercel.app,https://place-analytics.vercel.app"
 
     @property
     def allowed_origins_list(self) -> List[str]:

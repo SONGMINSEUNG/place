@@ -50,30 +50,40 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS 설정
+# CORS 설정 - 프로덕션 환경을 위해 명시적으로 설정
+# 주의: Vercel 프론트엔드에서 요청 시 정확한 origin이 필요
 default_origins = [
+    # 로컬 개발 환경
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:8080",
     "http://127.0.0.1:8080",
-    # 프로덕션 환경
+    # 프로덕션 환경 - Vercel
     "https://place-chi.vercel.app",
     "https://place-analytics.vercel.app",
+    # Vercel Preview URLs (와일드카드 패턴은 지원 안됨, 필요시 추가)
 ]
 
-origins = list(set(default_origins + settings.allowed_origins_list))
+# 환경변수에서 추가 origins 가져오기
+env_origins = settings.allowed_origins_list
+origins = list(set(default_origins + env_origins))
+
+# 빈 문자열 제거
+origins = [o for o in origins if o and o.strip()]
 
 logger.info(f"CORS allowed origins: {origins}")
 
+# CORS 미들웨어 - 가장 먼저 추가해야 함
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # 모든 HTTP 메서드 허용
+    allow_headers=["*"],  # 모든 헤더 허용
     expose_headers=["*"],
+    max_age=600,  # preflight 캐시 10분
 )
 
 # API 라우터 등록
