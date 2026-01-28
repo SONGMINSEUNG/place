@@ -292,8 +292,8 @@ class NaverPlaceService:
 
         return None
 
-    async def _search_naver(self, query: str) -> str:
-        """네이버 검색 페이지 HTML 가져오기"""
+    async def _search_naver(self, query: str, max_results: int = 300) -> str:
+        """네이버 검색 페이지 HTML 가져오기 (스크롤로 더 많은 결과 로드)"""
         await self._wait_for_rate_limit()
 
         page = await self._new_page()
@@ -307,7 +307,64 @@ class NaverPlaceService:
             await page.goto(url, wait_until="networkidle", timeout=20000)
             await page.wait_for_timeout(2000)
 
-            html = await page.content()
+            # 스크롤로 더 많은 결과 로드
+            best_html = ""
+            best_count = 0
+            prev_count = 0
+            no_change_count = 0
+            scroll_attempts = 0
+            max_scroll_attempts = 15
+
+            while scroll_attempts < max_scroll_attempts:
+                # 현재 HTML에서 place ID 개수 확인
+                html = await page.content()
+                current_count = len(set(re.findall(r'"PlaceSummary:(\d+)', html)))
+                current_count += len(set(re.findall(r'"RestaurantListSummary:(\d+)', html)))
+                current_count += len(set(re.findall(r'"CafeListSummary:(\d+)', html)))
+                current_count += len(set(re.findall(r'"AttractionListItem:(\d+)', html)))
+                current_count += len(set(re.findall(r'"PlaceListSummary:(\d+)', html)))
+                # 추가 패턴: "ID:ID":{"__typename":"Restaurant..."}
+                current_count += len(set(re.findall(r'"(\d+):\d+":\{"__typename":"(?:Restaurant|Cafe|Place|Attraction)', html)))
+
+                logger.debug(f"Scroll {scroll_attempts}: found {current_count} places")
+
+                # 가장 많은 결과를 가진 HTML 저장
+                if current_count > best_count:
+                    best_count = current_count
+                    best_html = html
+
+                # 목표 도달하면 중단
+                if current_count >= max_results:
+                    logger.info(f"Reached target {max_results}, stopping scroll")
+                    break
+
+                # 3회 연속 변화 없으면 중단 (더 이상 로드할 데이터 없음)
+                if current_count == prev_count:
+                    no_change_count += 1
+                    if no_change_count >= 3:
+                        logger.info(f"No more results after {scroll_attempts} scrolls (best: {best_count})")
+                        break
+                else:
+                    no_change_count = 0
+
+                prev_count = current_count
+                scroll_attempts += 1
+
+                # 페이지 끝까지 스크롤
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await page.wait_for_timeout(1200)
+
+                # 추가 스크롤 (중간 위치에서 다시)
+                await page.evaluate("window.scrollBy(0, 300)")
+                await page.wait_for_timeout(500)
+
+            # 가장 많은 결과를 가진 HTML 반환
+            if best_count > 0:
+                html = best_html
+            else:
+                html = await page.content()
+
+            logger.info(f"Search completed with {scroll_attempts} scrolls for '{query}' (found {best_count} places)")
             return html
 
         except Exception as e:
@@ -316,6 +373,96 @@ class NaverPlaceService:
         finally:
             try:
                 await page.context.close()
+            except:
+                pass
+
+    async def _search_naver_map(self, query: str, max_results: int = 100) -> List[Dict[str, Any]]:
+        """네이버 모바일 지도에서 플레이스 검색 (더 많은 결과 가져오기)"""
+        await self._wait_for_rate_limit()
+
+        browser = await self._get_browser()
+        if not browser:
+            return []
+
+        context = None
+        try:
+            # 모바일 브라우저로 접속
+            context = await browser.new_context(
+                viewport={"width": 390, "height": 844},
+                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+                locale="ko-KR"
+            )
+            page = await context.new_page()
+
+            encoded_query = urllib.parse.quote(query)
+            url = f"https://m.map.naver.com/search2/search.naver?query={encoded_query}"
+
+            await page.goto(url, wait_until="networkidle", timeout=20000)
+            await page.wait_for_timeout(3000)
+
+            # 스크롤하면서 결과 수집
+            all_ids = set()
+            place_data_list = []
+            no_change_count = 0
+            prev_count = 0
+
+            for i in range(15):  # 최대 15회 스크롤
+                html = await page.content()
+
+                # 플레이스 ID 추출
+                ids = set(re.findall(r'/place/(\d{8,})', html))
+                ids.update(re.findall(r'data-id="(\d{8,})"', html))
+                ids.update(re.findall(r'"id":(\d{8,})', html))
+                all_ids.update(ids)
+
+                current_count = len(all_ids)
+                logger.debug(f"Map scroll {i}: {current_count} IDs")
+
+                if current_count >= max_results:
+                    break
+
+                # 3회 연속 변화 없으면 중단
+                if current_count == prev_count:
+                    no_change_count += 1
+                    if no_change_count >= 3:
+                        break
+                else:
+                    no_change_count = 0
+
+                prev_count = current_count
+
+                # 스크롤
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await page.wait_for_timeout(1500)
+
+            logger.info(f"Map search found {len(all_ids)} place IDs for '{query}'")
+
+            # 각 ID에 대해 기본 정보 구성 (상세 정보는 나중에 보강)
+            for pid in list(all_ids)[:max_results]:
+                place_data_list.append({
+                    "place_id": pid,
+                    "name": "",
+                    "category": "",
+                    "address": "",
+                    "road_address": "",
+                    "phone": "",
+                    "visitor_review_count": 0,
+                    "blog_review_count": 0,
+                    "reservation_review_count": 0,
+                    "save_count": 0,
+                    "keywords": [],
+                    "menu_info": [],
+                })
+
+            return place_data_list
+
+        except Exception as e:
+            logger.error(f"Map search error: {e}")
+            return []
+        finally:
+            try:
+                if context:
+                    await context.close()
             except:
                 pass
 
@@ -986,29 +1133,145 @@ class NaverPlaceService:
                 return cached_places[:max_results]
 
         # 2. 캐시 미스: 실제 검색 수행
+        places = []
+        seen_ids = set()
+
         try:
-            html = await self._search_naver(keyword)
+            # 2-1. 네이버 통합 검색에서 상세 정보 포함된 결과 가져오기
+            html = await self._search_naver(keyword, max_results)
 
             if html:
-                places = self._extract_places_from_html(html)
-                logger.info(f"Search found {len(places)} places for '{keyword}'")
+                naver_places = self._extract_places_from_html(html)
+                logger.info(f"Naver search found {len(naver_places)} places for '{keyword}'")
 
-                # 3. 캐시에 저장 (블로그 보강 전 원본 저장)
-                if places:
-                    self._set_search_cache(keyword, places)
+                for place in naver_places:
+                    pid = str(place.get("place_id"))
+                    if pid and pid not in seen_ids:
+                        seen_ids.add(pid)
+                        places.append(place)
 
-                # 블로그 리뷰 보강 (상위 30개만)
-                if enrich_blog and places:
-                    top_places = places[:min(30, max_results)]
-                    top_places = await self._enrich_blog_reviews(top_places)
-                    places = top_places + places[30:]
+            # 2-2. 더 많은 결과가 필요하면 네이버 지도에서 추가 ID 가져오기
+            if len(places) < max_results:
+                map_places = await self._search_naver_map(keyword, max_results)
+                logger.info(f"Map search found {len(map_places)} additional IDs for '{keyword}'")
 
-                return places[:max_results]
+                for place in map_places:
+                    pid = str(place.get("place_id"))
+                    if pid and pid not in seen_ids:
+                        seen_ids.add(pid)
+                        places.append(place)
+
+            logger.info(f"Total: {len(places)} unique places for '{keyword}'")
+
+            # 3. 캐시에 저장 (블로그 보강 전 원본 저장)
+            if places:
+                self._set_search_cache(keyword, places)
+
+            # 블로그 리뷰 보강 (상위 30개만)
+            if enrich_blog and places:
+                top_places = places[:min(30, max_results)]
+                top_places = await self._enrich_blog_reviews(top_places)
+                places = top_places + places[30:]
+
+            return places[:max_results]
 
         except Exception as e:
             logger.error(f"Search error: {e}")
 
-        return []
+        return places[:max_results] if places else []
+
+    async def _enrich_place_names(self, places: List[Dict], limit: int = 50) -> List[Dict]:
+        """이름이 없는 업체들의 기본 정보 보강"""
+        import aiohttp
+
+        async def fetch_place_name(place: Dict) -> Dict:
+            if place.get("name"):
+                return place
+
+            place_id = place.get("place_id")
+            if not place_id:
+                return place
+
+            headers = {
+                "User-Agent": random.choice(USER_AGENTS),
+                "Accept": "text/html",
+                "Accept-Language": "ko-KR,ko;q=0.9",
+            }
+
+            urls = [
+                f"https://m.place.naver.com/restaurant/{place_id}/home",
+                f"https://m.place.naver.com/place/{place_id}/home",
+            ]
+
+            proxy_url = self._proxy_config["url"] if self._proxy_config else None
+
+            for url in urls:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(
+                            url, headers=headers, proxy=proxy_url,
+                            timeout=aiohttp.ClientTimeout(total=10)
+                        ) as resp:
+                            if resp.status != 200:
+                                continue
+                            html = await resp.text()
+
+                            if "서비스 이용이 제한" in html:
+                                continue
+
+                            # 이름 추출
+                            name_match = re.search(r'"name"\s*:\s*"([^"]+)"', html)
+                            if name_match:
+                                try:
+                                    place["name"] = json.loads(f'"{name_match.group(1)}"')
+                                except:
+                                    place["name"] = name_match.group(1)
+
+                            # 카테고리
+                            cat_match = re.search(r'"category"\s*:\s*"([^"]+)"', html)
+                            if cat_match:
+                                place["category"] = cat_match.group(1).split(",")[0]
+
+                            # 방문자 리뷰
+                            visitor_match = re.search(r'"visitorReviewsTotal"\s*:\s*(\d+)', html)
+                            if visitor_match:
+                                place["visitor_review_count"] = int(visitor_match.group(1))
+
+                            # 블로그 리뷰
+                            blog_match = re.search(r'블로그리뷰\s*([0-9,]+)', html)
+                            if blog_match:
+                                place["blog_review_count"] = int(blog_match.group(1).replace(',', ''))
+
+                            if place.get("name"):
+                                logger.debug(f"Enriched place name: {place['name']}")
+                                return place
+
+                except Exception as e:
+                    logger.debug(f"Failed to enrich {place_id}: {e}")
+                    continue
+
+            return place
+
+        # 이름 없는 업체들만 필터링 (최대 limit개)
+        places_to_enrich = [p for p in places if not p.get("name")][:limit]
+        places_with_name = [p for p in places if p.get("name")]
+
+        if places_to_enrich:
+            # 병렬로 처리 (최대 10개씩)
+            enriched = []
+            batch_size = 10
+            for i in range(0, len(places_to_enrich), batch_size):
+                batch = places_to_enrich[i:i+batch_size]
+                results = await asyncio.gather(*[fetch_place_name(p) for p in batch])
+                enriched.extend(results)
+                if i + batch_size < len(places_to_enrich):
+                    await asyncio.sleep(0.5)  # 차단 방지
+
+            # 결합: 이름 있는 것 + 보강된 것 + 나머지
+            remaining = [p for p in places if not p.get("name")][limit:]
+            return places_with_name + enriched + remaining
+
+        return places
 
     async def get_place_rank(
         self,
@@ -1020,6 +1283,9 @@ class NaverPlaceService:
         """특정 플레이스의 키워드 검색 순위 조회"""
         # 순위 조회 시에는 블로그 보강 건너뜀 (아래에서 별도로 보강)
         search_results = await self.search_places(keyword, max_search, enrich_blog=False)
+
+        # 이름이 없는 업체들 정보 보강 (상위 50개)
+        search_results = await self._enrich_place_names(search_results, limit=50)
 
         # 상위 30개 업체 데이터 보강
         top_places = search_results[:30]
@@ -1051,9 +1317,8 @@ class NaverPlaceService:
                 result["rank"] = idx + 1
                 result["target_place"] = place_data
 
-            # 상위 50개는 경쟁사로 저장
-            if idx < 50:
-                result["competitors"].append(place_data)
+            # 전체 업체를 경쟁사로 저장 (순위권 밖 매장도 확인 가능)
+            result["competitors"].append(place_data)
 
         # 키워드별 요소 분석 추가
         if len(search_results) >= 3:

@@ -204,9 +204,9 @@ async def analyze_keyword(
                 RecommendationItem(**rec) for rec in raw_recommendations
             ]
 
-        # 6. 경쟁사 정보
+        # 6. 경쟁사 정보 (전체 업체 표시 - 순위권 밖 매장도 확인 가능)
         competitors = []
-        for place in transformed_places[:10]:  # 상위 10개
+        for place in transformed_places:  # 전체 업체
             competitors.append(CompetitorResponse(
                 rank=place["rank"],
                 name=place["name"],
