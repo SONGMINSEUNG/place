@@ -66,9 +66,9 @@ async def analyze_keyword(
                     extracted_params = parameter_extractor.extract_from_adlog_response(
                         request.keyword, adlog_places
                     )
-                    await parameter_repository.save_or_update(db, extracted_params)
+                    # save_or_update는 KeywordParameter 객체를 반환
+                    cached_params = await parameter_repository.save_or_update(db, extracted_params)
                     await db.commit()
-                    cached_params = extracted_params
                     logger.info(f"Saved keyword parameters for: {request.keyword}")
             except Exception as e:
                 logger.error(f"Failed to extract parameters from ADLOG: {str(e)}")
