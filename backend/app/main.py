@@ -71,7 +71,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
@@ -81,6 +81,7 @@ app.include_router(api_router, prefix="/api")
 
 
 @app.get("/")
+@app.head("/")
 async def root():
     return {
         "name": settings.APP_NAME,
@@ -90,6 +91,7 @@ async def root():
 
 
 @app.get("/health")
+@app.head("/health")
 async def health_check():
     return {"status": "healthy"}
 
