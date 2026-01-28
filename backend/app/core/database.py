@@ -47,5 +47,17 @@ async def get_db():
 async def init_db():
     # Import models to register them with Base
     from app.models import User, Place, PlaceSearch, RankHistory, SavedKeyword, AdlogTrainingData, UserInputData, KeywordParameter
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # 디버깅: DB URL 확인 (비밀번호 마스킹)
+    masked_url = db_url.replace(db_url.split(':')[2].split('@')[0], '****') if ':' in db_url else db_url
+    logger.info(f"Attempting to connect to: {masked_url}")
+
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Database connection failed: {type(e).__name__}: {e}")
+        raise
