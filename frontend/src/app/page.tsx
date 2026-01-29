@@ -277,13 +277,13 @@ export default function Dashboard() {
         placeName,
         myVisitorReviews,
         myBlogReviews,
-        8
+        21
       );
 
       if (result?.related_keywords?.length > 0) {
         const related = result.related_keywords
           .filter((k: any) => k.keyword !== baseKeyword.replace(/\s/g, ''))
-          .slice(0, 6)
+          .slice(0, 20)
           .map((k: any) => ({
             keyword: k.keyword,
             searchVolume: k.monthly_total,
