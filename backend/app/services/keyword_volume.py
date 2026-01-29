@@ -362,8 +362,8 @@ class KeywordVolumeService:
                 if combined not in combined_keywords and combined != hint_keyword.replace(' ', ''):
                     combined_keywords.append(combined)
 
-        # 최대 10개 키워드만
-        combined_keywords = combined_keywords[:10]
+        # limit 파라미터에 따라 키워드 수 제한
+        combined_keywords = combined_keywords[:limit]
 
         if not combined_keywords:
             return []
