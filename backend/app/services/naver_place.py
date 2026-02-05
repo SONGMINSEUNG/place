@@ -1290,12 +1290,30 @@ class NaverPlaceService:
         # 상위 30개 업체 데이터 보강
         top_places = search_results[:30]
 
-        # 블로그 리뷰가 0인 업체들은 상세 페이지에서 가져오기
-        top_places = await self._enrich_blog_reviews(top_places)
+        # 블로그 리뷰와 최신성을 병렬로 수집 (성능 최적화)
+        import asyncio
+        blog_enriched, freshness_enriched = await asyncio.gather(
+            self._enrich_blog_reviews(top_places),
+            self._enrich_freshness(top_places),
+            return_exceptions=True
+        )
 
-        # 최신성(최근 1주일 리뷰 수) 수집
-        top_places = await self._enrich_freshness(top_places)
+        # 예외 처리 및 결과 병합
+        if isinstance(blog_enriched, Exception):
+            logger.warning(f"Blog enrichment failed: {blog_enriched}")
+            blog_enriched = top_places
+        if isinstance(freshness_enriched, Exception):
+            logger.warning(f"Freshness enrichment failed: {freshness_enriched}")
+            freshness_enriched = top_places
 
+        # 두 결과를 병합 (place_id 기준)
+        freshness_map = {p.get("place_id"): p.get("freshness_count", 0) for p in freshness_enriched}
+        for place in blog_enriched:
+            place_id = place.get("place_id")
+            if place_id in freshness_map:
+                place["freshness_count"] = freshness_map[place_id]
+
+        top_places = blog_enriched
         search_results = top_places + search_results[30:]
 
         result = {

@@ -2,6 +2,7 @@
 키워드 검색량 조회 서비스
 네이버 검색광고 API 또는 대안적 방법으로 실제 월간 검색량 조회
 """
+import asyncio
 import httpx
 import hashlib
 import hmac
@@ -355,9 +356,11 @@ class KeywordVolumeService:
             found_business = [hint_keyword.split()[-1] if ' ' in hint_keyword else hint_keyword]
 
         # 3. 지역 + 업종 조합 키워드 생성 (근처 지역만!)
+        # limit 파라미터 기반으로 업종 개수 동적 계산
+        max_biz_count = max(3, (limit // len(target_locations)) + 1)
         combined_keywords = []
         for loc in target_locations:  # 근처 지역만
-            for biz in found_business[:3]:  # 최대 3개 업종
+            for biz in found_business[:max_biz_count]:  # 동적 업종 개수
                 combined = f"{loc}{biz}"
                 if combined not in combined_keywords and combined != hint_keyword.replace(' ', ''):
                     combined_keywords.append(combined)
@@ -423,14 +426,37 @@ class KeywordVolumeService:
                 results.sort(key=lambda x: x["monthly_total"], reverse=True)
 
                 # 공략 가능성 분석 추가 - 실제 상위 업체 리뷰수와 비교
-                # 상위 3개 키워드만 경쟁사 분석 (속도 최적화)
+                # 상위 5개 키워드만 경쟁사 분석 (병렬 처리로 속도 최적화)
                 my_total_reviews = my_visitor_reviews + my_blog_reviews
                 analyzed_results = []
 
+                # 상위 5개 키워드에 대해 병렬로 경쟁사 정보 가져오기
+                competitor_tasks = []
+                competitor_indices = []
                 for idx, kw in enumerate(results[:limit]):
-                    # 상위 5개 키워드 실제 경쟁사 검색 (나머지는 스킵)
                     if idx < 5:
-                        top_competitors = await self._get_top_competitors_reviews(kw["keyword"])
+                        competitor_tasks.append(self._get_top_competitors_reviews(kw["keyword"]))
+                        competitor_indices.append(idx)
+
+                # 병렬 실행
+                if competitor_tasks:
+                    top_competitors_list = await asyncio.gather(*competitor_tasks, return_exceptions=True)
+                else:
+                    top_competitors_list = []
+
+                # 결과를 인덱스별로 매핑
+                competitor_results = {}
+                for i, idx in enumerate(competitor_indices):
+                    result_item = top_competitors_list[i]
+                    if isinstance(result_item, Exception):
+                        competitor_results[idx] = {"avg_visitor": 0, "avg_blog": 0, "avg_total": 0, "top3": []}
+                    else:
+                        competitor_results[idx] = result_item
+
+                for idx, kw in enumerate(results[:limit]):
+                    # 병렬로 가져온 결과 사용 (5개 이후는 빈 데이터)
+                    if idx in competitor_results:
+                        top_competitors = competitor_results[idx]
                     else:
                         top_competitors = {"avg_visitor": 0, "avg_blog": 0, "avg_total": 0, "top3": []}
 

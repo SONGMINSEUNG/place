@@ -92,7 +92,23 @@ class PlaceAnalyzer:
             if any(keyword_lower in kw.lower() for kw in keywords_list):
                 n2_keyword_match += 0.3
         else:
-            n2_keyword_match = 0.5  # 키워드 없으면 중간값
+            # 키워드 없을 때: 업체 정보 품질 기반 점수 계산
+            # 카테고리, 대표 키워드 존재 여부, 상호명 길이 등으로 판단
+            name = place_data.get("name", "")
+            category = place_data.get("category", "")
+            keywords_list = place_data.get("keywords", []) or []
+
+            # 상호명 존재하면 +0.2
+            if name and len(name) > 2:
+                n2_keyword_match += 0.2
+            # 카테고리 존재하면 +0.3
+            if category:
+                n2_keyword_match += 0.3
+            # 대표 키워드가 있으면 +0.3
+            if keywords_list and len(keywords_list) >= 1:
+                n2_keyword_match += 0.3
+            # 최소 0.1 보장
+            n2_keyword_match = max(0.1, n2_keyword_match)
 
         # 정보 완성도 점수
         info_fields = [
@@ -117,7 +133,11 @@ class PlaceAnalyzer:
             # 순위가 높을수록 (1에 가까울수록) 점수 높음
             n3 = max(0, 1 - (rank / min(total_places, 100)))
         else:
-            n3 = 0.5  # 순위 정보 없으면 중간값
+            # 순위 정보 없을 때: 리뷰/저장 데이터 기반 추정
+            # N1 점수가 높으면 순위도 높을 가능성이 크다고 가정
+            # N1을 기반으로 N3를 추정 (0.3 ~ 0.8 범위)
+            estimated_n3 = 0.3 + (n1 * 0.5)
+            n3 = min(0.8, max(0.2, estimated_n3))
 
         # 종합 점수
         total_score = (n1 * 0.4) + (n2 * 0.35) + (n3 * 0.25)
