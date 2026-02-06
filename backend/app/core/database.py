@@ -22,6 +22,7 @@ if is_postgres:
     engine_kwargs["connect_args"] = {
         "timeout": 30,  # 연결 타임아웃 30초
         "command_timeout": 60,  # 쿼리 타임아웃 60초
+        "statement_cache_size": 0,  # pgbouncer 호환 (prepared statement 비활성화)
         "server_settings": {
             "application_name": "place-analytics"
         }
