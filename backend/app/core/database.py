@@ -10,6 +10,11 @@ logger = logging.getLogger(__name__)
 db_url = settings.database_url
 is_postgres = db_url.startswith("postgresql")
 
+# pgbouncer 호환: URL에 prepared_statement_cache_size=0 추가
+if is_postgres and "prepared_statement_cache_size" not in db_url:
+    separator = "&" if "?" in db_url else "?"
+    db_url = f"{db_url}{separator}prepared_statement_cache_size=0"
+
 engine_kwargs = {
     "echo": settings.DEBUG,
     "future": True,
