@@ -202,6 +202,7 @@ class ParameterExtractor:
             "n3_intercept": n3_intercept,
             "n3_r_squared": n3_r_squared,
             "sample_count": sample_count,
+            "total_count": sample_count,  # ADLOG에서 반환된 총 업체 수 (크롤링용)
             "is_reliable": is_reliable,
             "last_trained_at": datetime.utcnow(),
         }
@@ -255,6 +256,7 @@ class ParameterRepository:
             existing.n3_intercept = params.get("n3_intercept")
             existing.n3_r_squared = params.get("n3_r_squared")
             existing.sample_count = params.get("sample_count", 0)
+            existing.total_count = params.get("total_count", 0)
             existing.last_trained_at = params.get("last_trained_at")
             existing.is_reliable = params.get("is_reliable", False)
             existing.api_call_count = (existing.api_call_count or 0) + 1
@@ -275,6 +277,7 @@ class ParameterRepository:
                 n3_intercept=params.get("n3_intercept"),
                 n3_r_squared=params.get("n3_r_squared"),
                 sample_count=params.get("sample_count", 0),
+                total_count=params.get("total_count", 0),
                 last_trained_at=params.get("last_trained_at"),
                 api_call_count=1,
                 cache_hit_count=0,

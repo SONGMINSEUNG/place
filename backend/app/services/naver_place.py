@@ -313,7 +313,17 @@ class NaverPlaceService:
             prev_count = 0
             no_change_count = 0
             scroll_attempts = 0
-            max_scroll_attempts = 15
+
+            # 동적 스크롤 횟수 계산: 목표 수에 따라 조절
+            # 일반적으로 스크롤당 약 10-15개 로드됨
+            min_scrolls = 3  # 최소 스크롤 횟수 보장
+            estimated_scrolls = max(min_scrolls, (max_results // 10) + 2)
+            max_scroll_attempts = min(estimated_scrolls, 15)  # 최대 15회 제한
+
+            # 조기 종료를 위한 목표 수 (20% 여유분 포함)
+            target_with_buffer = int(max_results * 1.2)
+
+            logger.debug(f"Scroll settings: max_attempts={max_scroll_attempts}, target_with_buffer={target_with_buffer}")
 
             while scroll_attempts < max_scroll_attempts:
                 # 현재 HTML에서 place ID 개수 확인
@@ -333,9 +343,9 @@ class NaverPlaceService:
                     best_count = current_count
                     best_html = html
 
-                # 목표 도달하면 중단
-                if current_count >= max_results:
-                    logger.info(f"Reached target {max_results}, stopping scroll")
+                # 목표 + 여유분 도달하면 조기 종료
+                if current_count >= target_with_buffer:
+                    logger.info(f"Early stop: reached {current_count} places (target: {max_results}, buffer: {target_with_buffer})")
                     break
 
                 # 3회 연속 변화 없으면 중단 (더 이상 로드할 데이터 없음)
@@ -406,7 +416,15 @@ class NaverPlaceService:
             no_change_count = 0
             prev_count = 0
 
-            for i in range(15):  # 최대 15회 스크롤
+            # 동적 스크롤 횟수 계산
+            min_scrolls = 3
+            estimated_scrolls = max(min_scrolls, (max_results // 8) + 2)
+            max_scroll_attempts = min(estimated_scrolls, 15)
+            target_with_buffer = int(max_results * 1.2)
+
+            logger.debug(f"Map scroll settings: max_attempts={max_scroll_attempts}, target_with_buffer={target_with_buffer}")
+
+            for i in range(max_scroll_attempts):
                 html = await page.content()
 
                 # 플레이스 ID 추출
@@ -418,7 +436,9 @@ class NaverPlaceService:
                 current_count = len(all_ids)
                 logger.debug(f"Map scroll {i}: {current_count} IDs")
 
-                if current_count >= max_results:
+                # 목표 + 여유분 도달하면 조기 종료
+                if current_count >= target_with_buffer:
+                    logger.info(f"Map early stop: reached {current_count} IDs (target: {max_results})")
                     break
 
                 # 3회 연속 변화 없으면 중단

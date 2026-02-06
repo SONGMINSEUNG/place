@@ -362,6 +362,7 @@ class KeywordParameter(Base):
 
     # 메타데이터
     sample_count = Column(Integer, default=0)  # 학습에 사용된 샘플 수
+    total_count = Column(Integer, default=0)  # ADLOG에서 반환된 총 업체 수 (크롤링 개수 결정용)
     last_trained_at = Column(DateTime, nullable=True)  # 마지막 학습 시간
     api_call_count = Column(Integer, default=0)  # 총 API 호출 횟수
     cache_hit_count = Column(Integer, default=0)  # 캐시 히트 횟수
