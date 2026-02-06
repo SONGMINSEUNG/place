@@ -3,17 +3,13 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import NullPool
 from app.core.config import settings
 import logging
+import asyncpg
 
 logger = logging.getLogger(__name__)
 
 # PostgreSQL 사용 시 connection pool 설정 추가
 db_url = settings.database_url
 is_postgres = db_url.startswith("postgresql")
-
-# pgbouncer 호환: URL에 prepared_statement_cache_size=0 추가
-if is_postgres and "prepared_statement_cache_size" not in db_url:
-    separator = "&" if "?" in db_url else "?"
-    db_url = f"{db_url}{separator}prepared_statement_cache_size=0"
 
 engine_kwargs = {
     "echo": settings.DEBUG,
@@ -23,15 +19,28 @@ engine_kwargs = {
 # PostgreSQL에서는 NullPool 사용 (serverless 환경 호환)
 if is_postgres:
     engine_kwargs["poolclass"] = NullPool
-    # asyncpg 연결 타임아웃 설정 (초 단위)
-    engine_kwargs["connect_args"] = {
-        "timeout": 30,  # 연결 타임아웃 30초
-        "command_timeout": 60,  # 쿼리 타임아웃 60초
-        "statement_cache_size": 0,  # pgbouncer 호환 (prepared statement 비활성화)
-        "server_settings": {
-            "application_name": "place-analytics"
-        }
-    }
+
+    # asyncpg 직접 연결 함수 (pgbouncer 호환)
+    # URL에서 연결 정보 추출
+    import re
+    from urllib.parse import urlparse, parse_qs
+
+    parsed = urlparse(db_url.replace("postgresql+asyncpg://", "postgresql://"))
+
+    async def create_asyncpg_connection():
+        """pgbouncer 호환을 위해 statement_cache_size=0으로 asyncpg 연결 생성"""
+        return await asyncpg.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            user=parsed.username,
+            password=parsed.password,
+            database=parsed.path.lstrip("/"),
+            statement_cache_size=0,  # pgbouncer 호환 핵심 설정
+            timeout=30,
+            command_timeout=60,
+        )
+
+    engine_kwargs["async_creator"] = create_asyncpg_connection
 
 engine = create_async_engine(db_url, **engine_kwargs)
 
