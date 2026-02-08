@@ -634,8 +634,13 @@ class AdlogProxyService:
             }
             places.append(place)
 
-        # 순위순 정렬
-        places.sort(key=lambda x: x["rank"])
+        # N3 내림차순 정렬 (높을수록 좋은 순위 = 경쟁력 높음)
+        # ADLOG API의 place_rank가 n1 기준이므로, n3 기준으로 재정렬
+        places.sort(key=lambda x: x["raw_indices"]["n3"], reverse=True)
+
+        # 정렬 후 순위 재부여
+        for idx, place in enumerate(places):
+            place["rank"] = idx + 1
 
         return {
             "keyword": keyword,
