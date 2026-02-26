@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { Search, Bell, TrendingUp, TrendingDown, Building2, ChevronDown, Clock, Target, Zap, RefreshCw, ExternalLink, Minus, Star, BarChart3, Sparkles } from "lucide-react";
 import { keywordsApi, SavedKeyword, trendApi } from "@/lib/api";
@@ -131,7 +131,18 @@ export default function Dashboard() {
   const [quickPlaceName, setQuickPlaceName] = useState("");
   const [quickKeyword, setQuickKeyword] = useState("");
 
+  // 무한 렌더링 방지용 ref
+  const selectedBusinessRef = useRef<RegisteredBusiness | null>(null);
+  const prevBusinessIdRef = useRef<string | null>(null);
+  const prevKeywordIdsRef = useRef<string>("");
+
+  // selectedBusiness 변경 시 ref 동기화
+  useEffect(() => {
+    selectedBusinessRef.current = selectedBusiness;
+  }, [selectedBusiness]);
+
   // localStorage에서 데이터 로드하는 함수
+  // selectedBusiness를 ref로 참조하여 의존성 순환 방지
   const loadLocalStorageData = useCallback(() => {
     const savedSearches = localStorage.getItem('recentSearches');
     if (savedSearches) {
@@ -142,11 +153,11 @@ export default function Dashboard() {
     if (savedBusinesses) {
       const parsed = JSON.parse(savedBusinesses);
       setBusinesses(parsed);
-      if (parsed.length > 0 && !selectedBusiness) {
+      if (parsed.length > 0 && !selectedBusinessRef.current) {
         setSelectedBusiness(parsed[0]);
       }
     }
-  }, [selectedBusiness]);
+  }, []);
 
   // 페이지 마운트 시 데이터 로드 (인증 후)
   useEffect(() => {
@@ -160,7 +171,7 @@ export default function Dashboard() {
     }
   }, [authLoading, user]);
 
-  // 윈도우 포커스 시 데이터 다시 로드
+  // 윈도우 포커스 시 데이터 다시 로드 (마운트 시 한 번만 등록)
   useEffect(() => {
     const handleFocus = () => {
       loadLocalStorageData();
@@ -168,7 +179,8 @@ export default function Dashboard() {
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [loadLocalStorageData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 모든 추적 키워드 로드 (업체 필터 없이)
   const loadAllTrackedKeywords = async () => {
@@ -314,8 +326,24 @@ export default function Dashboard() {
   };
 
   // 추적 키워드가 로드되거나 선택된 업체가 변경되면 관련 키워드도 로드
+  // 이전 값과 비교하여 실제 변경된 경우에만 API 호출 (무한 루프 방지)
   useEffect(() => {
     try {
+      const currentBusinessId = selectedBusiness?.placeId || null;
+      const currentKeywordIds = allTrackedKeywords.map(k => k.id).sort().join(',');
+
+      // 이전 값과 동일하면 스킵
+      if (
+        currentBusinessId === prevBusinessIdRef.current &&
+        currentKeywordIds === prevKeywordIdsRef.current
+      ) {
+        return;
+      }
+
+      // 현재 값을 ref에 저장
+      prevBusinessIdRef.current = currentBusinessId;
+      prevKeywordIdsRef.current = currentKeywordIds;
+
       // 선택된 업체의 키워드만 필터링
       const filteredKeywords = selectedBusiness
         ? allTrackedKeywords.filter(k => String(k.place_id) === String(selectedBusiness.placeId))
@@ -335,6 +363,7 @@ export default function Dashboard() {
     } catch (error) {
       console.error('키워드 필터링 에러:', error);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allTrackedKeywords, selectedBusiness]);
 
   const handleRefreshAll = async () => {
