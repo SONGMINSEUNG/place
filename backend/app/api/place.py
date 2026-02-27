@@ -149,8 +149,8 @@ async def search_places(
     keyword: str = Query(..., min_length=2, description="검색 키워드"),
     limit: int = Query(50, ge=1, le=300, description="결과 개수")
 ):
-    """키워드로 플레이스 검색"""
-    results = await naver_service.search_places(keyword, limit)
+    """키워드로 플레이스 검색 (경량 API - aiohttp 직접 호출)"""
+    results = await naver_service.search_places_light(keyword, limit)
     return {
         "keyword": keyword,
         "total": len(results),

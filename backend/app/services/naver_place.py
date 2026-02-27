@@ -2482,6 +2482,87 @@ class NaverPlaceService:
 
         return reviews
 
+    async def search_places_light(self, keyword: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """경량 업체 검색 - aiohttp로 네이버 지도 API 직접 호출 (Playwright 미사용)
+
+        Playwright 크롤링 대신 네이버 지도 검색 API를 직접 호출하여
+        1-2초 내에 결과를 반환합니다.
+
+        Args:
+            keyword: 검색 키워드 (업체명)
+            limit: 최대 결과 수 (기본 50)
+
+        Returns:
+            place_id, name, category 등을 포함한 업체 리스트
+        """
+        places = []
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://map.naver.com/",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        }
+
+        try:
+            encoded_keyword = urllib.parse.quote(keyword)
+            url = (
+                f"https://map.naver.com/p/api/search/allSearch"
+                f"?query={encoded_keyword}&type=place&searchCoord=&boundary="
+            )
+
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status != 200:
+                        logger.warning(
+                            f"search_places_light: HTTP {resp.status} for '{keyword}'"
+                        )
+                        return []
+
+                    data = await resp.json()
+
+            # 응답 구조: result.place.list 에 업체 목록이 있음
+            place_result = data.get("result", {}).get("place", {})
+            place_list = place_result.get("list", [])
+
+            for item in place_list[:limit]:
+                place_id = item.get("id", "")
+                name = item.get("name", "")
+                if not place_id or not name:
+                    continue
+
+                # HTML 태그 제거 (name에 <b> 태그가 포함될 수 있음)
+                clean_name = re.sub(r"<[^>]+>", "", name)
+
+                place = {
+                    "place_id": str(place_id),
+                    "name": clean_name,
+                    "category": item.get("category", ""),
+                    "address": item.get("address", ""),
+                    "road_address": item.get("roadAddress", ""),
+                    "phone": item.get("tel", ""),
+                    "x": item.get("x", ""),
+                    "y": item.get("y", ""),
+                    "review_count": int(item.get("reviewCount", 0) or 0),
+                    "visitor_review_count": int(item.get("visitorReviewCount", 0) or 0),
+                }
+                places.append(place)
+
+            logger.info(
+                f"search_places_light: Found {len(places)} places for '{keyword}'"
+            )
+
+        except asyncio.TimeoutError:
+            logger.error(f"search_places_light: Timeout for '{keyword}'")
+        except aiohttp.ClientError as e:
+            logger.error(f"search_places_light: HTTP error for '{keyword}': {e}")
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"search_places_light: Parse error for '{keyword}': {e}")
+        except Exception as e:
+            logger.error(f"search_places_light: Unexpected error for '{keyword}': {e}")
+
+        return places
+
     async def close(self):
         """브라우저 종료"""
         if self._browser:
