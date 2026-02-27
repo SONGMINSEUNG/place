@@ -2483,10 +2483,10 @@ class NaverPlaceService:
         return reviews
 
     async def search_places_light(self, keyword: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """경량 업체 검색 - aiohttp로 네이버 지도 API 직접 호출 (Playwright 미사용)
+        """경량 업체 검색 - 네이버 공식 OpenAPI 지역 검색 사용
 
-        Playwright 크롤링 대신 네이버 지도 검색 API를 직접 호출하여
-        1-2초 내에 결과를 반환합니다.
+        네이버 지도 비공식 API가 캡차(ncaptcha)로 차단되어
+        공식 OpenAPI(local.json)를 사용합니다.
 
         Args:
             keyword: 검색 키워드 (업체명)
@@ -2496,23 +2496,32 @@ class NaverPlaceService:
             place_id, name, category 등을 포함한 업체 리스트
         """
         places = []
+
+        naver_client_id = os.getenv("NAVER_CLIENT_ID")
+        naver_client_secret = os.getenv("NAVER_CLIENT_SECRET")
+
+        if not naver_client_id or not naver_client_secret:
+            logger.error("search_places_light: NAVER_CLIENT_ID or NAVER_CLIENT_SECRET not set")
+            return []
+
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://map.naver.com/",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+            "X-Naver-Client-Id": naver_client_id,
+            "X-Naver-Client-Secret": naver_client_secret,
         }
 
+        # 업체 선택용이므로 최대 5개면 충분
+        display = min(limit, 5)
+
         try:
-            encoded_keyword = urllib.parse.quote(keyword)
-            url = (
-                f"https://map.naver.com/p/api/search/allSearch"
-                f"?query={encoded_keyword}&type=place&searchCoord=&boundary="
-            )
+            url = "https://openapi.naver.com/v1/search/local.json"
+            params = {
+                "query": keyword,
+                "display": display,
+            }
 
             timeout = aiohttp.ClientTimeout(total=5)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url, headers=headers) as resp:
+                async with session.get(url, headers=headers, params=params) as resp:
                     if resp.status != 200:
                         logger.warning(
                             f"search_places_light: HTTP {resp.status} for '{keyword}'"
@@ -2521,30 +2530,36 @@ class NaverPlaceService:
 
                     data = await resp.json()
 
-            # 응답 구조: result.place.list 에 업체 목록이 있음
-            place_result = data.get("result", {}).get("place", {})
-            place_list = place_result.get("list", [])
+            # 응답 구조: items 배열에 업체 목록
+            item_list = data.get("items", [])
 
-            for item in place_list[:limit]:
-                place_id = item.get("id", "")
-                name = item.get("name", "")
-                if not place_id or not name:
+            for item in item_list:
+                title = item.get("title", "")
+                if not title:
                     continue
 
-                # HTML 태그 제거 (name에 <b> 태그가 포함될 수 있음)
-                clean_name = re.sub(r"<[^>]+>", "", name)
+                # HTML 태그 제거 (title에 <b> 태그가 포함됨)
+                clean_name = re.sub(r"<[^>]+>", "", title)
+
+                # place_id가 없으므로 mapx_mapy 조합으로 생성
+                mapx = item.get("mapx", "")
+                mapy = item.get("mapy", "")
+                place_id = f"naver_{mapx}_{mapy}" if mapx and mapy else ""
+
+                if not place_id:
+                    continue
 
                 place = {
-                    "place_id": str(place_id),
+                    "place_id": place_id,
                     "name": clean_name,
                     "category": item.get("category", ""),
                     "address": item.get("address", ""),
                     "road_address": item.get("roadAddress", ""),
-                    "phone": item.get("tel", ""),
-                    "x": item.get("x", ""),
-                    "y": item.get("y", ""),
-                    "review_count": int(item.get("reviewCount", 0) or 0),
-                    "visitor_review_count": int(item.get("visitorReviewCount", 0) or 0),
+                    "phone": item.get("telephone", ""),
+                    "x": mapx,
+                    "y": mapy,
+                    "review_count": 0,
+                    "visitor_review_count": 0,
                 }
                 places.append(place)
 
