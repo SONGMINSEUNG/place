@@ -856,13 +856,13 @@ function InquiryPageContent() {
                         {place.name} {isMyPlace && <span style={{ color: '#6366f1', fontSize: '12px' }}>(ME)</span>}
                       </td>
                       <td style={{ padding: '12px 12px', textAlign: 'center', fontSize: '14px', fontWeight: '500', color: '#0284c7' }}>
-                        {place.scores.keyword_score.toFixed(1)}
+                        {place.scores.keyword_score.toFixed(6)}
                       </td>
                       <td style={{ padding: '12px 12px', textAlign: 'center', fontSize: '14px', fontWeight: '600', color: '#16a34a' }}>
-                        {place.scores.quality_score.toFixed(1)}
+                        {place.scores.quality_score.toFixed(6)}
                       </td>
                       <td style={{ padding: '12px 12px', textAlign: 'center', fontSize: '14px', fontWeight: '500', color: '#ca8a04' }}>
-                        {place.scores.competition_score.toFixed(1)}
+                        {place.scores.competition_score.toFixed(6)}
                       </td>
                       <td style={{ padding: '12px 12px', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
                         {place.metrics.visit_count?.toLocaleString() || '0'}

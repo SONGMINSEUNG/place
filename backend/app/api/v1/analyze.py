@@ -37,21 +37,16 @@ router = APIRouter()
 
 
 def round_index(value: float) -> float:
-    """N1, N2, N3 값을 소수점 첫째자리로 반올림"""
-    return round(value, 1)
+    """N1, N2, N3 값을 반올림 없이 그대로 반환"""
+    return value
 
 
 def normalize_and_round_index(value: float) -> float:
     """
-    N1, N2, N3 값을 정규화하고 반올림
-    - 0~1 범위면 100 곱함
-    - 결과를 소수점 첫째자리로 반올림
+    N1, N2, N3 원본 값 그대로 반환
+    score_converter에서 자체 점수 체계(*137)로 변환하므로 여기서는 원본 유지
     """
-    if 0 < value <= 1.0:
-        normalized = value * 100
-    else:
-        normalized = value
-    return round(normalized, 1)
+    return value
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)

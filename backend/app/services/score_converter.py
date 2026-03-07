@@ -1,72 +1,39 @@
 """
 Score Converter Service
-N1, N2, N3를 단순 변환 (원본 값 * 100)
+N1, N2, N3를 자체 점수 체계로 변환 (원본 값 * 137)
 
-수정 사항:
-- 키워드마다 N2, N3 범위가 다르므로 고정 범위 변환 제거
-- 단순히 원본 값 * 100으로 변환 (마이너스 값 방지)
-- 예: N2 = 0.267 → 26.7점, N3 = 0.368 → 36.8점
+- 자체 점수 체계: ADLOG 원본 * 137
+- 소수점 끝자리까지 유지하여 업체 간 미세 변동 확인 가능
+- 예: N2 = 0.267000 → 36.579점, N3 = 0.369452 → 50.614724점
 """
 from typing import Dict, Any
 
+SCORE_MULTIPLIER = 137
+
 
 class ScoreConverter:
-    """ADLOG 지수를 0-100 점수로 변환 (단순 변환)"""
+    """ADLOG 지수를 자체 점수로 변환 (* 137)"""
 
     @staticmethod
     def convert_n2_to_quality_score(n2: float) -> float:
-        """
-        N2 → 품질점수 (스케일 자동 감지)
-
-        - N2 < 1.5: 0-1 스케일로 간주 → * 100
-        - N2 >= 1.5: 이미 0-100 스케일 → 그대로 사용
-
-        예시:
-        - N2 = 0.267000 → 26.7000점 (0-1 스케일)
-        - N2 = 26.7000 → 26.7000점 (이미 0-100 스케일)
-        """
+        """N2 → 품질점수"""
         if n2 >= 1.5:
-            score = n2
-        else:
-            score = n2 * 100
-        return round(score, 4)
+            return n2 * (SCORE_MULTIPLIER / 100)
+        return n2 * SCORE_MULTIPLIER
 
     @staticmethod
     def convert_n1_to_keyword_score(n1: float) -> float:
-        """
-        N1 → 키워드지수 (스케일 자동 감지)
-
-        - N1 < 1.5: 0-1 스케일로 간주 → * 100
-        - N1 >= 1.5: 이미 0-100 스케일 → 그대로 사용
-
-        예시:
-        - 0.366894 → 36.6894점 (0-1 스케일)
-        - 36.6894 → 36.6894점 (이미 0-100 스케일)
-        """
+        """N1 → 키워드지수"""
         if n1 >= 1.5:
-            return round(n1, 4)
-        return round(n1 * 100, 4)
+            return n1 * (SCORE_MULTIPLIER / 100)
+        return n1 * SCORE_MULTIPLIER
 
     @staticmethod
     def convert_n3_to_competition_score(n3: float) -> float:
-        """
-        N3 → 종합경쟁력 (스케일 자동 감지)
-
-        - N3 < 1.5: 0-1 스케일로 간주 → * 100
-        - N3 >= 1.5: 이미 0-100 스케일 → 그대로 사용
-
-        예시:
-        - 0.368945 → 36.8945점 (0-1 스케일)
-        - 36.8945 → 36.8945점 (이미 0-100 스케일)
-        """
-        # N3가 이미 0-100 스케일인지 확인 (formula_calculator에서 계산된 경우)
+        """N3 → 종합경쟁력"""
         if n3 >= 1.5:
-            # 이미 0-100 스케일
-            score = n3
-        else:
-            # 0-1 스케일 → 0-100으로 변환
-            score = n3 * 100
-        return round(score, 4)
+            return n3 * (SCORE_MULTIPLIER / 100)
+        return n3 * SCORE_MULTIPLIER
 
     @staticmethod
     def convert_all(n1: float, n2: float, n3: float) -> Dict[str, float]:
@@ -80,21 +47,20 @@ class ScoreConverter:
     @staticmethod
     def calculate_gap(my_score: float, target_score: float) -> float:
         """점수 차이 계산"""
-        return round(target_score - my_score, 4)
+        return target_score - my_score
 
     @staticmethod
     def quality_score_to_n2(quality_score: float) -> float:
         """품질점수 → N2 역변환 (시뮬레이션용)"""
-        n2 = quality_score / 100
-        return round(n2, 6)
+        return quality_score / SCORE_MULTIPLIER
 
     @staticmethod
     def get_raw_indices(n1: float, n2: float, n3: float) -> Dict[str, float]:
         """원본 지수 반환 (디버깅/표시용)"""
         return {
-            "n1": round(n1, 6),
-            "n2": round(n2, 6),
-            "n3": round(n3, 6),
+            "n1": n1,
+            "n2": n2,
+            "n3": n3,
         }
 
 
@@ -120,9 +86,7 @@ class PlaceDataTransformer:
             "metrics": place.get("metrics"),
             "changes": {
                 "rank_change": place.get("changes", {}).get("rank_change", 0),
-                "score_change": round(
-                    place.get("changes", {}).get("n2_change", 0) * 100, 4
-                ),
+                "score_change": place.get("changes", {}).get("n2_change", 0) * SCORE_MULTIPLIER,
             }
         }
 
