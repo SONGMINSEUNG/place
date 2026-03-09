@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api';
 
@@ -9,24 +9,110 @@ const api = axios.create({
   },
 });
 
+// 인증 엔드포인트 목록 (401 인터셉터에서 제외)
+const AUTH_ENDPOINTS = ['/auth/login', '/auth/register', '/auth/refresh'];
+
+// refresh 중복 호출 방지
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+}> = [];
+
+const processQueue = (error: unknown, token: string | null = null) => {
+  failedQueue.forEach(({ resolve, reject }) => {
+    if (error) {
+      reject(error);
+    } else {
+      resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 // 토큰 인터셉터
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
   }
   return config;
 });
 
-// 응답 인터셉터
+// 응답 인터셉터 - refresh token 기반 자동 갱신
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+  async (error: AxiosError) => {
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // 401이 아니거나, 인증 엔드포인트이거나, 이미 재시도한 요청이면 그대로 에러 반환
+    if (
+      error.response?.status !== 401 ||
+      !originalRequest ||
+      originalRequest._retry ||
+      AUTH_ENDPOINTS.some((ep) => originalRequest.url?.includes(ep))
+    ) {
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
+
+    // refresh token이 없으면 로그인 페이지로
+    if (typeof window === 'undefined') {
+      return Promise.reject(error);
+    }
+
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) {
+      localStorage.removeItem('token');
+      // 이미 로그인 페이지면 리다이렉트 안 함 (무한 리다이렉트 방지)
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+      return Promise.reject(error);
+    }
+
+    // 이미 refresh 진행 중이면 큐에 추가하고 대기
+    if (isRefreshing) {
+      return new Promise((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+      }).then((token) => {
+        originalRequest.headers.Authorization = `Bearer ${token}`;
+        return api(originalRequest);
+      });
+    }
+
+    originalRequest._retry = true;
+    isRefreshing = true;
+
+    try {
+      // refresh token으로 새 access token 요청
+      const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+        refresh_token: refreshToken,
+      });
+
+      const newAccessToken = data.access_token;
+      localStorage.setItem('token', newAccessToken);
+
+      // 대기 중인 요청들 처리
+      processQueue(null, newAccessToken);
+
+      // 원래 요청 재시도
+      originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+      return api(originalRequest);
+    } catch (refreshError) {
+      // refresh 실패 - 모든 토큰 제거 후 로그인 페이지로
+      processQueue(refreshError, null);
+      localStorage.removeItem('token');
+      localStorage.removeItem('refresh_token');
+
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+      return Promise.reject(refreshError);
+    } finally {
+      isRefreshing = false;
+    }
   }
 );
 
@@ -675,17 +761,36 @@ export const authApi = {
     if (data.access_token) {
       localStorage.setItem('token', data.access_token);
     }
+    if (data.refresh_token) {
+      localStorage.setItem('refresh_token', data.refresh_token);
+    }
     return data;
   },
 
   // 로그아웃
   logout: () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
   },
 
   // 현재 사용자 정보
   getMe: async () => {
     const { data } = await api.get('/auth/me');
+    return data;
+  },
+
+  // 토큰 갱신 (수동 호출용)
+  refresh: async () => {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
+    const { data } = await api.post('/auth/refresh', {
+      refresh_token: refreshToken,
+    });
+    if (data.access_token) {
+      localStorage.setItem('token', data.access_token);
+    }
     return data;
   },
 };

@@ -11,6 +11,15 @@ logger = logging.getLogger(__name__)
 db_url = settings.database_url
 is_postgres = db_url.startswith("postgresql")
 
+if not is_postgres:
+    logger.warning(
+        "========================================\n"
+        "[DATABASE] SQLite 사용 중!\n"
+        "서버 재시작 시 회원 데이터가 유실될 수 있습니다.\n"
+        ".env 파일에 DATABASE_URL을 PostgreSQL URL로 설정하세요.\n"
+        "========================================"
+    )
+
 engine_kwargs = {
     "echo": settings.DEBUG,
     "future": True,

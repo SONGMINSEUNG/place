@@ -44,6 +44,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuth = async () => {
     const token = localStorage.getItem("token");
     if (!token) {
+      // access token이 없어도 refresh token이 있으면 갱신 시도
+      const refreshToken = localStorage.getItem("refresh_token");
+      if (refreshToken) {
+        try {
+          await authApi.refresh();
+          // refresh 성공 후 사용자 정보 조회
+          const userData = await authApi.getMe();
+          setUser(userData);
+        } catch {
+          // refresh도 실패하면 모든 토큰 제거
+          localStorage.removeItem("token");
+          localStorage.removeItem("refresh_token");
+        }
+      }
       setLoading(false);
       return;
     }
@@ -51,8 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userData = await authApi.getMe();
       setUser(userData);
-    } catch (error) {
+    } catch {
+      // getMe 실패 시 토큰 정리 (refresh는 axios 인터셉터가 자동 처리)
+      setUser(null);
       localStorage.removeItem("token");
+      localStorage.removeItem("refresh_token");
     } finally {
       setLoading(false);
     }
@@ -60,7 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     await authApi.login(email, password);
-    await checkAuth();
+    // login이 성공하면 authApi.login 내부에서 token과 refresh_token이 저장됨
+    const userData = await authApi.getMe();
+    setUser(userData);
     router.push("/");
   };
 
