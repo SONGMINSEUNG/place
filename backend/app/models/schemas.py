@@ -89,8 +89,8 @@ class PlaceResponse(BaseModel):
 
 class ComparisonResponse(BaseModel):
     """비교 분석 응답"""
-    rank_1_gap: float = Field(..., description="1위와 점수 차이")
-    rank_1_score: float = Field(..., description="1위 점수")
+    rank_1_gap: float = Field(..., description="1위와 경쟁력점수(N3) 차이")
+    rank_1_score: float = Field(..., description="1위 경쟁력점수(N3)")
 
 
 class RecommendationItem(BaseModel):

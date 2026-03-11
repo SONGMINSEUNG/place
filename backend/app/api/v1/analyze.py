@@ -259,8 +259,8 @@ async def analyze_keyword(
                 break
 
         if my_place_data and rank_1_place:
-            my_score = my_place_data["scores"]["quality_score"]
-            rank_1_score = rank_1_place["scores"]["quality_score"]
+            my_score = my_place_data["scores"]["competition_score"]  # N3
+            rank_1_score = rank_1_place["scores"]["competition_score"]  # N3
             comparison = ComparisonResponse(
                 rank_1_gap=round(rank_1_score - my_score, 4),
                 rank_1_score=rank_1_score,

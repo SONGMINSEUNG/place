@@ -803,11 +803,11 @@ function InquiryPageContent() {
           </h3>
           <div className="comparison-grid" style={{ display: 'grid', gap: '16px', textAlign: 'center' }}>
             <div>
-              <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>내 품질점수</div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>{myPlace.scores.quality_score.toFixed(4)}</div>
+              <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>내 경쟁력점수</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>{myPlace.scores.competition_score.toFixed(4)}</div>
             </div>
             <div>
-              <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>1위 품질점수</div>
+              <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>1위 경쟁력점수</div>
               <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>{comparison.rank_1_score.toFixed(4)}</div>
             </div>
             <div>
