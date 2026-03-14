@@ -17,6 +17,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  serverConnecting: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -52,6 +53,7 @@ async function retryWithDelay<T>(fn: () => Promise<T>, retries = 2, delay = 3000
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [serverConnecting, setServerConnecting] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -59,6 +61,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     checkAuth();
+  }, []);
+
+  // 탭 복귀 시 세션 체크 + 서버 연결 확인
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        checkAuth();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -73,12 +88,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const refreshToken = localStorage.getItem("refresh_token");
       if (refreshToken) {
         try {
+          setServerConnecting(true);
           await retryWithDelay(() => authApi.refresh());
           const userData = await retryWithDelay(() => authApi.getMe());
           setUser(userData);
+          setServerConnecting(false);
         } catch (error) {
           // 네트워크 에러면 토큰 유지 (서버가 아직 깨어나는 중)
-          if (!isNetworkError(error)) {
+          if (isNetworkError(error)) {
+            setServerConnecting(true);
+            scheduleRetry();
+          } else {
+            setServerConnecting(false);
             localStorage.removeItem("token");
             localStorage.removeItem("refresh_token");
           }
@@ -89,22 +110,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      setServerConnecting(true);
       const userData = await retryWithDelay(() => authApi.getMe());
       setUser(userData);
+      setServerConnecting(false);
     } catch (error) {
       // 네트워크 에러면 토큰 유지 (서버가 깨어나는 중일 수 있음)
       if (isNetworkError(error)) {
-        // 토큰은 유지하고, 사용자만 null (다음 요청에서 재시도됨)
+        // 토큰은 유지하고, 서버 연결 중 표시
         setUser(null);
+        setServerConnecting(true);
+        scheduleRetry();
       } else {
         // 401 등 실제 인증 에러면 토큰 제거
         setUser(null);
+        setServerConnecting(false);
         localStorage.removeItem("token");
         localStorage.removeItem("refresh_token");
       }
     } finally {
       setLoading(false);
     }
+  };
+
+  // 서버 깨어날 때까지 주기적 재시도 (5초 간격)
+  const scheduleRetry = () => {
+    const interval = setInterval(async () => {
+      try {
+        const userData = await authApi.getMe();
+        setUser(userData);
+        setServerConnecting(false);
+        clearInterval(interval);
+      } catch (error) {
+        if (!isNetworkError(error)) {
+          // 서버는 응답하지만 인증 실패 -> 연결은 됨
+          setServerConnecting(false);
+          clearInterval(interval);
+        }
+        // 네트워크 에러면 계속 재시도
+      }
+    }, 5000);
   };
 
   const login = async (email: string, password: string) => {
@@ -130,7 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, serverConnecting, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
