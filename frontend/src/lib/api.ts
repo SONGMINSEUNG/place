@@ -4,6 +4,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/a
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 90000, // 90초 (Render cold start 대응)
   headers: {
     'Content-Type': 'application/json',
   },
@@ -101,13 +102,18 @@ api.interceptors.response.use(
       originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
       return api(originalRequest);
     } catch (refreshError) {
-      // refresh 실패 - 모든 토큰 제거 후 로그인 페이지로
       processQueue(refreshError, null);
-      localStorage.removeItem('token');
-      localStorage.removeItem('refresh_token');
 
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+      // 네트워크 에러(서버 꺼짐/타임아웃)면 토큰 유지 - 서버 깨어나면 다시 됨
+      const isNetwork = refreshError instanceof Error && !('response' in refreshError && (refreshError as any).response);
+      if (!isNetwork) {
+        // 실제 인증 에러(401 등)만 토큰 제거 + 리다이렉트
+        localStorage.removeItem('token');
+        localStorage.removeItem('refresh_token');
+
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
       }
       return Promise.reject(refreshError);
     } finally {

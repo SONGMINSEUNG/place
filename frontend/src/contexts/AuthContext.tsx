@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { authApi } from "@/lib/api";
 import { useRouter, usePathname } from "next/navigation";
+import { AxiosError } from "axios";
 
 interface User {
   id: number;
@@ -22,6 +23,31 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// 네트워크 에러인지 판별 (타임아웃, 서버 다운, 연결 거부 등)
+function isNetworkError(error: unknown): boolean {
+  if (error instanceof AxiosError) {
+    // 응답 자체가 없으면 네트워크 에러 (타임아웃, 연결 실패 등)
+    return !error.response;
+  }
+  return false;
+}
+
+// 재시도 유틸 (Render cold start 대응)
+async function retryWithDelay<T>(fn: () => Promise<T>, retries = 2, delay = 3000): Promise<T> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i < retries && isNetworkError(error)) {
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -44,18 +70,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuth = async () => {
     const token = localStorage.getItem("token");
     if (!token) {
-      // access token이 없어도 refresh token이 있으면 갱신 시도
       const refreshToken = localStorage.getItem("refresh_token");
       if (refreshToken) {
         try {
-          await authApi.refresh();
-          // refresh 성공 후 사용자 정보 조회
-          const userData = await authApi.getMe();
+          await retryWithDelay(() => authApi.refresh());
+          const userData = await retryWithDelay(() => authApi.getMe());
           setUser(userData);
-        } catch {
-          // refresh도 실패하면 모든 토큰 제거
-          localStorage.removeItem("token");
-          localStorage.removeItem("refresh_token");
+        } catch (error) {
+          // 네트워크 에러면 토큰 유지 (서버가 아직 깨어나는 중)
+          if (!isNetworkError(error)) {
+            localStorage.removeItem("token");
+            localStorage.removeItem("refresh_token");
+          }
         }
       }
       setLoading(false);
@@ -63,22 +89,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const userData = await authApi.getMe();
+      const userData = await retryWithDelay(() => authApi.getMe());
       setUser(userData);
-    } catch {
-      // getMe 실패 시 토큰 정리 (refresh는 axios 인터셉터가 자동 처리)
-      setUser(null);
-      localStorage.removeItem("token");
-      localStorage.removeItem("refresh_token");
+    } catch (error) {
+      // 네트워크 에러면 토큰 유지 (서버가 깨어나는 중일 수 있음)
+      if (isNetworkError(error)) {
+        // 토큰은 유지하고, 사용자만 null (다음 요청에서 재시도됨)
+        setUser(null);
+      } else {
+        // 401 등 실제 인증 에러면 토큰 제거
+        setUser(null);
+        localStorage.removeItem("token");
+        localStorage.removeItem("refresh_token");
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const login = async (email: string, password: string) => {
-    await authApi.login(email, password);
-    // login이 성공하면 authApi.login 내부에서 token과 refresh_token이 저장됨
-    const userData = await authApi.getMe();
+    await retryWithDelay(() => authApi.login(email, password));
+    const userData = await retryWithDelay(() => authApi.getMe());
     setUser(userData);
     router.push("/");
   };
@@ -91,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUser = async () => {
     try {
-      const userData = await authApi.getMe();
+      const userData = await retryWithDelay(() => authApi.getMe());
       setUser(userData);
     } catch (error) {
       console.error("Failed to refresh user:", error);
