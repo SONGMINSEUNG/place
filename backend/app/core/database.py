@@ -3,7 +3,6 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import NullPool
 from app.core.config import settings
 import logging
-import asyncpg
 
 logger = logging.getLogger(__name__)
 
@@ -25,31 +24,35 @@ engine_kwargs = {
     "future": True,
 }
 
-# PostgreSQL에서는 NullPool 사용 (serverless 환경 호환)
+# PostgreSQL에서는 NullPool + pgbouncer 호환 설정
 if is_postgres:
     engine_kwargs["poolclass"] = NullPool
 
-    # asyncpg 직접 연결 함수 (pgbouncer 호환)
-    # URL에서 연결 정보 추출
-    import re
-    from urllib.parse import urlparse, parse_qs
+    # --- pgbouncer (transaction mode) 완전 호환 설정 ---
+    #
+    # pgbouncer transaction mode에서는 prepared statement가 작동하지 않는다.
+    # 두 레이어 모두에서 비활성화해야 한다:
+    #
+    # Layer 1) asyncpg 레벨 - connect_args로 전달
+    #   statement_cache_size=0: asyncpg의 내장 prepared statement 캐시 비활성화
+    #
+    # Layer 2) SQLAlchemy asyncpg dialect 레벨 - URL 쿼리 파라미터로 전달
+    #   prepared_statement_cache_size=0: dialect의 prepared statement 캐시 비활성화
+    #   이것이 없으면 SQLAlchemy가 자체적으로 PREPARE/DEALLOCATE를 실행하여
+    #   "select pg_catalog.version()" 등의 초기 쿼리에서 에러 발생
 
-    parsed = urlparse(db_url.replace("postgresql+asyncpg://", "postgresql://"))
+    engine_kwargs["connect_args"] = {
+        "statement_cache_size": 0,  # asyncpg 내장 prepared stmt 캐시 OFF
+    }
 
-    async def create_asyncpg_connection():
-        """pgbouncer 호환을 위해 statement_cache_size=0으로 asyncpg 연결 생성"""
-        return await asyncpg.connect(
-            host=parsed.hostname,
-            port=parsed.port or 5432,
-            user=parsed.username,
-            password=parsed.password,
-            database=parsed.path.lstrip("/"),
-            statement_cache_size=0,  # pgbouncer 호환 핵심 설정
-            timeout=30,
-            command_timeout=60,
-        )
+    # URL에 prepared_statement_cache_size 쿼리 파라미터 추가
+    separator = "&" if "?" in db_url else "?"
+    db_url = f"{db_url}{separator}prepared_statement_cache_size=0"
 
-    engine_kwargs["async_creator"] = create_asyncpg_connection
+    logger.info(
+        "[DATABASE] PostgreSQL + pgbouncer 호환 모드 활성화 "
+        "(asyncpg statement_cache_size=0, dialect prepared_statement_cache_size=0)"
+    )
 
 engine = create_async_engine(db_url, **engine_kwargs)
 
