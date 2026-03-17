@@ -267,6 +267,12 @@ class NaverPlaceService:
         if url.isdigit():
             return url
 
+        # naver_XXX_YYY 형식 (search_places_light에서 생성한 좌표 기반 ID)
+        # 입력이 직접 naver_XXX_YYY이거나 URL에 포함된 경우 모두 처리
+        naver_match = re.search(r"(naver_\d+_\d+)", url)
+        if naver_match:
+            return naver_match.group(1)
+
         # URL에서 숫자 ID 추출 패턴들
         patterns = [
             r"/place/(\d+)",
