@@ -1329,9 +1329,9 @@ class NaverPlaceService:
         # 두 결과를 병합 (place_id 기준)
         freshness_map = {p.get("place_id"): p.get("freshness_count", 0) for p in freshness_enriched}
         for place in blog_enriched:
-            place_id = place.get("place_id")
-            if place_id in freshness_map:
-                place["freshness_count"] = freshness_map[place_id]
+            pid = place.get("place_id")
+            if pid in freshness_map:
+                place["freshness_count"] = freshness_map[pid]
 
         top_places = blog_enriched
         search_results = top_places + search_results[30:]

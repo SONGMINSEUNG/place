@@ -1,10 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { Loader2, RefreshCw, Plus, Trash2, TrendingUp, TrendingDown, Minus, X, Search, Bell, ChevronDown, ChevronUp, Users, FileText } from "lucide-react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { Loader2, RefreshCw, Plus, Trash2, TrendingUp, TrendingDown, Minus, X, Search, Bell, ChevronDown, ChevronUp, Users, FileText, Building2 } from "lucide-react";
 import { toast } from "sonner";
 import { keywordsApi, SavedKeyword, DailyData } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+
+interface RegisteredBusiness {
+  placeId: string;
+  placeName: string;
+  category: string;
+}
 
 const cardStyle: React.CSSProperties = { background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' };
 const inputStyle: React.CSSProperties = { width: '100%', padding: '12px 16px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '14px', background: 'white' };
@@ -24,6 +30,10 @@ export default function TrackingPage() {
   const [expandedKeyword, setExpandedKeyword] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [autoRefreshed, setAutoRefreshed] = useState(false);
+  const [selectedBusiness, setSelectedBusiness] = useState<RegisteredBusiness | null>(null);
+  const [businesses, setBusinesses] = useState<RegisteredBusiness[]>([]);
+  const [businessDropdownOpen, setBusinessDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const loadKeywords = useCallback(async () => {
     try {
@@ -41,13 +51,39 @@ export default function TrackingPage() {
     loadKeywords();
   }, [loadKeywords]);
 
+  // Load registered businesses from localStorage
+  useEffect(() => {
+    const savedBusinesses = localStorage.getItem('registeredBusinesses');
+    if (savedBusinesses) {
+      const parsed: RegisteredBusiness[] = JSON.parse(savedBusinesses);
+      setBusinesses(parsed);
+      if (parsed.length > 0) {
+        setSelectedBusiness(parsed[0]);
+      }
+    }
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setBusinessDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   useEffect(() => {
     if (user && !autoRefreshed && keywords.length > 0 && !loading) {
       const shouldRefresh = keywords.some(kw => {
         if (!kw.weekly_data || kw.weekly_data.length === 0) return true;
-        const lastUpdate = new Date(kw.weekly_data[kw.weekly_data.length - 1]?.date);
-        const hoursSinceUpdate = (Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60);
-        return hoursSinceUpdate > 1;
+        const lastDateStr = kw.weekly_data[kw.weekly_data.length - 1]?.date;
+        if (!lastDateStr) return true;
+        // date format is "MM/DD" - compare with today's date string
+        const now = new Date();
+        const todayStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+        return lastDateStr !== todayStr;
       });
 
       if (shouldRefresh) {
@@ -87,10 +123,28 @@ export default function TrackingPage() {
   const handleRefreshAll = async (silent = false) => {
     setRefreshing(true);
     try {
-      const result = await keywordsApi.refreshAll();
-      await loadKeywords();
-      if (!silent) {
-        toast.success(`${result.updated}개 키워드의 순위가 업데이트되었습니다`);
+      // If a business is selected, only refresh keywords for that business
+      if (selectedBusiness) {
+        const businessKeywords = keywords.filter(
+          kw => String(kw.place_id) === String(selectedBusiness.placeId)
+        );
+        let updatedCount = 0;
+        for (const kw of businessKeywords) {
+          try {
+            await keywordsApi.refresh(kw.id);
+            updatedCount++;
+          } catch { /* skip failed */ }
+        }
+        await loadKeywords();
+        if (!silent) {
+          toast.success(`${updatedCount}개 키워드의 순위가 업데이트되었습니다`);
+        }
+      } else {
+        const result = await keywordsApi.refreshAll();
+        await loadKeywords();
+        if (!silent) {
+          toast.success(`${result.updated}개 키워드의 순위가 업데이트되었습니다`);
+        }
       }
     } catch {
       if (!silent) toast.error("전체 업데이트에 실패했습니다");
@@ -132,18 +186,24 @@ export default function TrackingPage() {
     return `${date.getMonth() + 1}/${date.getDate()}`;
   };
 
+  // Stats are computed from filteredKeywords so they reflect business selection
+  const statsKeywords = keywords.filter(kw =>
+    !selectedBusiness || String(kw.place_id) === String(selectedBusiness.placeId)
+  );
   const stats = {
-    total: keywords.length,
-    top3: keywords.filter(k => k.last_rank && k.last_rank <= 3).length,
-    top10: keywords.filter(k => k.last_rank && k.last_rank <= 10).length,
-    avgRank: keywords.length > 0 ? (keywords.reduce((sum, k) => sum + (k.last_rank || 100), 0) / keywords.length).toFixed(1) : '-'
+    total: statsKeywords.length,
+    top3: statsKeywords.filter(k => k.last_rank && k.last_rank <= 3).length,
+    top10: statsKeywords.filter(k => k.last_rank && k.last_rank <= 10).length,
+    avgRank: statsKeywords.length > 0 ? (statsKeywords.reduce((sum, k) => sum + (k.last_rank || 100), 0) / statsKeywords.length).toFixed(1) : '-'
   };
 
-  const filteredKeywords = keywords.filter(kw =>
-    !searchQuery ||
-    kw.keyword.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (kw.place_name && kw.place_name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredKeywords = keywords.filter(kw => {
+    const matchesBusiness = !selectedBusiness || String(kw.place_id) === String(selectedBusiness.placeId);
+    const matchesSearch = !searchQuery ||
+      kw.keyword.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (kw.place_name && kw.place_name.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesBusiness && matchesSearch;
+  });
 
   return (
     <div>
@@ -153,7 +213,56 @@ export default function TrackingPage() {
           <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>순위 추적</h1>
           <p style={{ fontSize: '14px', color: '#64748b', marginTop: '4px' }}>키워드별 순위 변동을 추적하세요</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          {/* 업체 선택 드롭다운 */}
+          <div style={{ position: 'relative' }} ref={dropdownRef}>
+            <button
+              onClick={() => setBusinessDropdownOpen(!businessDropdownOpen)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '10px 16px', borderRadius: '12px', border: '1px solid #e2e8f0',
+                background: 'white', cursor: 'pointer', minWidth: '200px'
+              }}
+            >
+              <Building2 style={{ width: '18px', height: '18px', color: '#6366f1' }} />
+              <span style={{ flex: 1, textAlign: 'left', fontWeight: '500', color: '#1e293b' }}>
+                {selectedBusiness?.placeName || '전체 업체'}
+              </span>
+              <ChevronDown style={{ width: '16px', height: '16px', color: '#64748b' }} />
+            </button>
+            {businessDropdownOpen && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '4px',
+                background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 10, overflow: 'hidden'
+              }}>
+                <div
+                  onClick={() => { setSelectedBusiness(null); setBusinessDropdownOpen(false); }}
+                  style={{
+                    padding: '12px 16px', cursor: 'pointer',
+                    background: !selectedBusiness ? '#eef2ff' : 'white',
+                    fontWeight: '500', color: '#6366f1'
+                  }}
+                >
+                  전체 업체 보기
+                </div>
+                {businesses.map((b) => (
+                  <div
+                    key={b.placeId}
+                    onClick={() => { setSelectedBusiness(b); setBusinessDropdownOpen(false); }}
+                    style={{
+                      padding: '12px 16px', cursor: 'pointer',
+                      background: selectedBusiness?.placeId === b.placeId ? '#eef2ff' : 'white'
+                    }}
+                  >
+                    <div style={{ fontWeight: '500', color: '#1e293b' }}>{b.placeName}</div>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>{b.category}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div style={{ position: 'relative' }}>
             <Search style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: '#94a3b8' }} />
             <input
@@ -226,7 +335,13 @@ export default function TrackingPage() {
               {refreshing ? <Loader2 style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} /> : <RefreshCw style={{ width: '16px', height: '16px' }} />}
               전체 새로고침
             </button>
-            <button onClick={() => setAddDialogOpen(true)} style={btnPrimary}>
+            <button onClick={() => {
+              if (selectedBusiness) {
+                setNewPlaceUrl(selectedBusiness.placeId);
+                setNewPlaceName(selectedBusiness.placeName);
+              }
+              setAddDialogOpen(true);
+            }} style={btnPrimary}>
               <Plus style={{ width: '16px', height: '16px' }} />
               키워드 추가
             </button>
@@ -472,7 +587,13 @@ export default function TrackingPage() {
             </div>
             <p style={{ fontWeight: '500', color: '#475569' }}>저장된 키워드가 없습니다</p>
             <p style={{ fontSize: '14px', color: '#94a3b8', marginTop: '4px' }}>키워드를 추가하여 순위 변동을 추적하세요</p>
-            <button onClick={() => setAddDialogOpen(true)} style={{ ...btnPrimary, marginTop: '16px', display: 'inline-flex' }}>
+            <button onClick={() => {
+              if (selectedBusiness) {
+                setNewPlaceUrl(selectedBusiness.placeId);
+                setNewPlaceName(selectedBusiness.placeName);
+              }
+              setAddDialogOpen(true);
+            }} style={{ ...btnPrimary, marginTop: '16px', display: 'inline-flex' }}>
               <Plus style={{ width: '16px', height: '16px' }} />
               첫 키워드 추가하기
             </button>
@@ -496,6 +617,19 @@ export default function TrackingPage() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {selectedBusiness && (
+                <div style={{
+                  padding: '12px 16px', borderRadius: '12px',
+                  background: '#eef2ff', border: '1px solid #c7d2fe',
+                  display: 'flex', alignItems: 'center', gap: '8px'
+                }}>
+                  <Building2 style={{ width: '16px', height: '16px', color: '#6366f1' }} />
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#4338ca' }}>{selectedBusiness.placeName}</div>
+                    <div style={{ fontSize: '12px', color: '#6366f1' }}>{selectedBusiness.category}</div>
+                  </div>
+                </div>
+              )}
               <div>
                 <label style={{ fontSize: '14px', fontWeight: '500', color: '#374151', display: 'block', marginBottom: '8px' }}>플레이스 URL</label>
                 <input type="text" placeholder="https://m.place.naver.com/restaurant/1234567890" value={newPlaceUrl} onChange={(e) => setNewPlaceUrl(e.target.value)} style={inputStyle} />

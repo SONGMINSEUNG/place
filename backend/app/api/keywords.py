@@ -284,10 +284,11 @@ async def refresh_keyword_rank(
         visitor_review_count = counts.get("visitor_review", 0)
         blog_review_count = counts.get("blog_review", 0)
 
-    # 순위 변동
+    # 순위 변동 (업데이트 전에 이전 순위 저장)
+    previous_rank = keyword.last_rank
     rank_change = None
-    if keyword.last_rank and new_rank:
-        rank_change = keyword.last_rank - new_rank  # 양수면 순위 상승
+    if previous_rank and new_rank:
+        rank_change = previous_rank - new_rank  # 양수면 순위 상승
 
     # 업데이트
     keyword.last_rank = new_rank
@@ -316,7 +317,7 @@ async def refresh_keyword_rank(
     return {
         "keyword_id": keyword_id,
         "current_rank": new_rank,
-        "previous_rank": keyword.last_rank,
+        "previous_rank": previous_rank,
         "best_rank": keyword.best_rank,
         "rank_change": rank_change,
         "total_results": rank_result.get("total_results"),
@@ -393,21 +394,40 @@ async def refresh_all_keywords(
             rank_result = await naver_service.get_place_rank(keyword.place_id, keyword.keyword)
             new_rank = rank_result.get("rank")
 
+            # 분석 결과에서 데이터 추출
+            visitor_review_count = 0
+            blog_review_count = 0
+            place_score = None
+
+            analysis = rank_result.get("analysis")
+            if analysis and analysis.get("target_analysis"):
+                target = analysis["target_analysis"]
+                place_score = target.get("total_score")
+                counts = target.get("counts", {})
+                visitor_review_count = counts.get("visitor_review", 0)
+                blog_review_count = counts.get("blog_review", 0)
+
             rank_change = None
             if keyword.last_rank and new_rank:
                 rank_change = keyword.last_rank - new_rank
 
             keyword.last_rank = new_rank
+            keyword.visitor_review_count = visitor_review_count
+            keyword.blog_review_count = blog_review_count
+            keyword.place_score = place_score
             if new_rank and (keyword.best_rank is None or new_rank < keyword.best_rank):
                 keyword.best_rank = new_rank
             keyword.updated_at = datetime.utcnow()
 
-            # 히스토리 저장
+            # 히스토리 저장 (모든 데이터 포함)
             history = RankHistory(
                 place_id=keyword.place_id,
                 keyword=keyword.keyword,
                 rank=new_rank,
                 total_results=rank_result.get("total_results"),
+                visitor_review_count=visitor_review_count,
+                blog_review_count=blog_review_count,
+                place_score=place_score,
                 checked_at=datetime.utcnow()
             )
             db.add(history)

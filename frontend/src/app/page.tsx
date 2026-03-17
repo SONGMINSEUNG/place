@@ -203,17 +203,20 @@ export default function Dashboard() {
     if (initialFallbackDoneRef.current) return;
     if (recentSearches.length > 0 && allTrackedKeywords.length === 0 && !loading) {
       initialFallbackDoneRef.current = true;
-      const recentKeywords = [...new Set(recentSearches.slice(0, 5).map(s => s.keyword))];
+      const filtered = selectedBusiness
+        ? recentSearches.filter(s => String(s.placeId) === String(selectedBusiness.placeId))
+        : recentSearches;
+      const recentKeywords = [...new Set(filtered.slice(0, 5).map(s => s.keyword))];
       if (recentKeywords.length > 0) {
         loadKeywordTrends(recentKeywords);
-        loadRelatedKeywordsFromRecent(recentSearches);
+        loadRelatedKeywordsFromRecent(filtered);
       }
     }
     // allTrackedKeywords가 로드되면 초기 폴백은 불필요
     if (allTrackedKeywords.length > 0) {
       initialFallbackDoneRef.current = true;
     }
-  }, [recentSearches, allTrackedKeywords, loading]);
+  }, [recentSearches, allTrackedKeywords, loading, selectedBusiness]);
 
   const loadKeywordTrends = async (keywords: string[]) => {
     // 빈 배열이거나 유효하지 않은 키워드면 스킵
@@ -412,7 +415,10 @@ export default function Dashboard() {
       } else {
         // 추적 키워드가 없으면 localStorage의 최근 조회로 폴백
         const savedSearches = localStorage.getItem('recentSearches');
-        const fallbackSearches: RecentSearch[] = savedSearches ? JSON.parse(savedSearches) : [];
+        const allFallbackSearches: RecentSearch[] = savedSearches ? JSON.parse(savedSearches) : [];
+        const fallbackSearches = selectedBusiness
+          ? allFallbackSearches.filter(s => String(s.placeId) === String(selectedBusiness.placeId))
+          : allFallbackSearches;
 
         if (fallbackSearches.length > 0) {
           const recentKeywords = [...new Set(fallbackSearches.slice(0, 5).map(s => s.keyword))];
@@ -487,7 +493,10 @@ export default function Dashboard() {
     k.last_rank && k.last_rank > 1 && k.last_rank <= 10
   );
   const nearFirstKeywordsFromRecent = trackedKeywords.length === 0
-    ? recentSearches
+    ? (selectedBusiness
+        ? recentSearches.filter(s => String(s.placeId) === String(selectedBusiness.placeId))
+        : recentSearches
+      )
         .filter(s => s.rank && s.rank > 1 && s.rank <= 10)
         .filter((s, idx, arr) => arr.findIndex(a => a.keyword === s.keyword && a.placeId === s.placeId) === idx)
     : [];
@@ -506,6 +515,11 @@ export default function Dashboard() {
     const change = getRankChange(k);
     return change !== null && change < 0;
   });
+
+  // 최근 조회 - 선택된 업체 기준 필터링
+  const filteredRecentSearches = selectedBusiness
+    ? recentSearches.filter(s => String(s.placeId) === String(selectedBusiness.placeId))
+    : recentSearches;
 
   return (
     <div>
@@ -770,9 +784,9 @@ export default function Dashboard() {
             </h2>
           </div>
 
-          {recentSearches.length > 0 ? (
+          {filteredRecentSearches.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {recentSearches.slice(0, 5).map((search, idx) => (
+              {filteredRecentSearches.slice(0, 5).map((search, idx) => (
                 <div
                   key={idx}
                   onClick={() => handleRecentSearchClick(search)}
