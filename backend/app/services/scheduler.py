@@ -249,11 +249,22 @@ class PlaceScheduler:
                         try:
                             total_keywords += 1
 
-                            # 순위 조회
-                            rank_result = await self.naver_service.get_place_rank(
+                            # 경량 순위 조회 (Playwright 불필요)
+                            rank_result = await self.naver_service.get_place_rank_light(
                                 tracked.place_id,
                                 keyword
                             )
+
+                            new_rank = rank_result.get("rank")
+                            total_results = rank_result.get("total_results", 0)
+
+                            # 유효한 결과인지 확인 (null/0 데이터로 덮어쓰기 방지)
+                            if new_rank is None and total_results == 0:
+                                logger.warning(
+                                    f"Skipping rank save for {tracked.place_id} - {keyword}: "
+                                    f"empty result (source={rank_result.get('source', 'unknown')})"
+                                )
+                                continue
 
                             # places 테이블에 place 존재 보장 (FK 제약조건)
                             await ensure_place_exists(db, tracked.place_id, tracked.place_name)
@@ -262,8 +273,8 @@ class PlaceScheduler:
                             rank_history = RankHistory(
                                 place_id=tracked.place_id,
                                 keyword=keyword,
-                                rank=rank_result.get("rank"),
-                                total_results=rank_result.get("total_results", 0),
+                                rank=new_rank,
+                                total_results=total_results,
                                 checked_at=datetime.now()
                             )
                             db.add(rank_history)
@@ -346,28 +357,32 @@ class PlaceScheduler:
 
                 for kw in keywords:
                     try:
-                        # 순위 조회 (분석 포함)
-                        rank_result = await self.naver_service.get_place_rank(kw.place_id, kw.keyword)
+                        # 경량 순위 조회 (Playwright 불필요)
+                        rank_result = await self.naver_service.get_place_rank_light(kw.place_id, kw.keyword)
                         new_rank = rank_result.get("rank")
 
-                        # 분석 결과에서 데이터 추출
-                        visitor_review_count = 0
-                        blog_review_count = 0
-                        place_score = None
+                        # 경량 API 결과에서 데이터 추출
+                        visitor_review_count = rank_result.get("visitor_review_count", 0)
+                        blog_review_count = rank_result.get("blog_review_count", 0)
+                        place_score = rank_result.get("place_score")
 
-                        analysis = rank_result.get("analysis")
-                        if analysis and analysis.get("target_analysis"):
-                            target = analysis["target_analysis"]
-                            place_score = target.get("total_score")
-                            counts = target.get("counts", {})
-                            visitor_review_count = counts.get("visitor_review", 0)
-                            blog_review_count = counts.get("blog_review", 0)
+                        # 유효한 결과인지 확인 - null/0 데이터로 기존 좋은 데이터 덮어쓰기 방지
+                        total_results = rank_result.get("total_results", 0)
+                        if new_rank is None and total_results == 0:
+                            logger.warning(
+                                f"[SavedKeywords] 빈 결과 무시 - {kw.place_name} - {kw.keyword} "
+                                f"(source={rank_result.get('source', 'unknown')})"
+                            )
+                            error_count += 1
+                            continue
 
-                        # 키워드 업데이트
+                        # 키워드 업데이트 (유효한 데이터만 덮어쓰기)
                         kw.last_rank = new_rank
-                        kw.visitor_review_count = visitor_review_count
-                        kw.blog_review_count = blog_review_count
-                        kw.place_score = place_score
+                        if visitor_review_count > 0 or blog_review_count > 0:
+                            kw.visitor_review_count = visitor_review_count
+                            kw.blog_review_count = blog_review_count
+                        if place_score is not None:
+                            kw.place_score = place_score
                         if new_rank and (kw.best_rank is None or new_rank < kw.best_rank):
                             kw.best_rank = new_rank
                         kw.updated_at = datetime.now()
@@ -375,23 +390,27 @@ class PlaceScheduler:
                         # places 테이블에 place 존재 보장 (FK 제약조건)
                         await ensure_place_exists(db, kw.place_id, kw.place_name)
 
-                        # 히스토리 저장
+                        # 히스토리 저장 (유효한 데이터 우선, 없으면 기존 값 사용)
                         history = RankHistory(
                             place_id=kw.place_id,
                             keyword=kw.keyword,
                             rank=new_rank,
                             total_results=rank_result.get("total_results"),
-                            visitor_review_count=visitor_review_count,
-                            blog_review_count=blog_review_count,
-                            place_score=place_score,
+                            visitor_review_count=visitor_review_count if visitor_review_count > 0 else (kw.visitor_review_count or 0),
+                            blog_review_count=blog_review_count if blog_review_count > 0 else (kw.blog_review_count or 0),
+                            place_score=place_score if place_score is not None else kw.place_score,
                             checked_at=datetime.now()
                         )
                         db.add(history)
 
                         success_count += 1
-                        logger.info(f"[SavedKeywords] {kw.place_name} - {kw.keyword}: {new_rank}위, 리뷰: {visitor_review_count}/{blog_review_count}, 점수: {place_score}")
+                        logger.info(
+                            f"[SavedKeywords] {kw.place_name} - {kw.keyword}: {new_rank}위, "
+                            f"리뷰: {visitor_review_count}/{blog_review_count}, 점수: {place_score} "
+                            f"(source={rank_result.get('source', 'unknown')})"
+                        )
 
-                        # 요청 간격 (네이버 차단 방지)
+                        # 요청 간격 (API 차단 방지)
                         await asyncio.sleep(3)
 
                     except Exception as e:

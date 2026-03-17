@@ -1,0 +1,15 @@
+name: Keep Render Alive
+
+on:
+  schedule:
+    - cron: '*/14 * * * *'  # Every 14 minutes
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" https://place-analytics-api.onrender.com/health || true
+          echo "Pinged at $(date -u)"

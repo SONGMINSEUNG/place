@@ -7,6 +7,9 @@ from sqlalchemy import select, and_, desc
 from app.core.database import get_db
 from app.models.place import SavedKeyword, RankHistory, Place
 from app.services.naver_place import NaverPlaceService
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 naver_service = NaverPlaceService()
@@ -91,29 +94,20 @@ async def save_keyword(
     if existing:
         raise HTTPException(status_code=400, detail="이미 저장된 키워드입니다")
 
-    # 현재 순위 조회 (분석 포함)
-    rank_result = await naver_service.get_place_rank(place_id, request.keyword)
+    # 현재 순위 조회 (경량 API 사용 - Playwright 불필요)
+    try:
+        rank_result = await naver_service.get_place_rank_light(place_id, request.keyword)
+    except Exception as e:
+        logger.error(f"순위 조회 실패 (save_keyword) - place={place_id}, keyword={request.keyword}: {e}")
+        raise HTTPException(status_code=503, detail=f"순위 조회에 실패했습니다: {str(e)}")
+
     current_rank = rank_result.get("rank")
 
-    # 분석 결과에서 데이터 추출 (우리 산식으로 계산된 점수)
-    visitor_review_count = 0
-    blog_review_count = 0
-    place_score = None
+    # 경량 API 결과에서 데이터 추출
+    visitor_review_count = rank_result.get("visitor_review_count", 0)
+    blog_review_count = rank_result.get("blog_review_count", 0)
+    place_score = rank_result.get("place_score")
     place_name = request.place_name
-
-    analysis = rank_result.get("analysis")
-    if analysis and analysis.get("target_analysis"):
-        target = analysis["target_analysis"]
-        place_score = target.get("total_score")
-        counts = target.get("counts", {})
-        visitor_review_count = counts.get("visitor_review", 0)
-        blog_review_count = counts.get("blog_review", 0)
-
-    # 업체명 가져오기
-    if not place_name:
-        target_place = rank_result.get("target_place")
-        if target_place:
-            place_name = target_place.get("name")
 
     # 저장
     saved_keyword = SavedKeyword(
@@ -279,22 +273,19 @@ async def refresh_keyword_rank(
     if not keyword:
         raise HTTPException(status_code=404, detail="키워드를 찾을 수 없습니다")
 
-    # 순위 조회 (분석 포함)
-    rank_result = await naver_service.get_place_rank(keyword.place_id, keyword.keyword)
+    # 순위 조회 (경량 API 사용 - Playwright 불필요)
+    try:
+        rank_result = await naver_service.get_place_rank_light(keyword.place_id, keyword.keyword)
+    except Exception as e:
+        logger.error(f"순위 조회 실패 (refresh) - place={keyword.place_id}, keyword={keyword.keyword}: {e}")
+        raise HTTPException(status_code=503, detail=f"순위 조회에 실패했습니다: {str(e)}")
+
     new_rank = rank_result.get("rank")
 
-    # 분석 결과에서 데이터 추출 (우리 산식으로 계산된 점수)
-    visitor_review_count = 0
-    blog_review_count = 0
-    place_score = None
-
-    analysis = rank_result.get("analysis")
-    if analysis and analysis.get("target_analysis"):
-        target = analysis["target_analysis"]
-        place_score = target.get("total_score")
-        counts = target.get("counts", {})
-        visitor_review_count = counts.get("visitor_review", 0)
-        blog_review_count = counts.get("blog_review", 0)
+    # 경량 API 결과에서 데이터 추출
+    visitor_review_count = rank_result.get("visitor_review_count", 0)
+    blog_review_count = rank_result.get("blog_review_count", 0)
+    place_score = rank_result.get("place_score")
 
     # 순위 변동 (업데이트 전에 이전 순위 저장)
     previous_rank = keyword.last_rank
@@ -302,11 +293,13 @@ async def refresh_keyword_rank(
     if previous_rank and new_rank:
         rank_change = previous_rank - new_rank  # 양수면 순위 상승
 
-    # 업데이트
+    # 업데이트 (API 실패로 null 데이터가 오면 기존 데이터 유지)
     keyword.last_rank = new_rank
-    keyword.visitor_review_count = visitor_review_count
-    keyword.blog_review_count = blog_review_count
-    keyword.place_score = place_score
+    if visitor_review_count > 0 or blog_review_count > 0:
+        keyword.visitor_review_count = visitor_review_count
+        keyword.blog_review_count = blog_review_count
+    if place_score is not None:
+        keyword.place_score = place_score
     if new_rank and (keyword.best_rank is None or new_rank < keyword.best_rank):
         keyword.best_rank = new_rank
     keyword.updated_at = datetime.utcnow()
@@ -314,15 +307,15 @@ async def refresh_keyword_rank(
     # places 테이블에 place 존재 보장 (FK 제약조건)
     await ensure_place_exists(db, keyword.place_id, keyword.place_name)
 
-    # 히스토리 저장 (모든 데이터 포함)
+    # 히스토리 저장 (유효한 데이터 우선, 없으면 기존 값 사용)
     history = RankHistory(
         place_id=keyword.place_id,
         keyword=keyword.keyword,
         rank=new_rank,
         total_results=rank_result.get("total_results"),
-        visitor_review_count=visitor_review_count,
-        blog_review_count=blog_review_count,
-        place_score=place_score,
+        visitor_review_count=visitor_review_count if visitor_review_count > 0 else (keyword.visitor_review_count or 0),
+        blog_review_count=blog_review_count if blog_review_count > 0 else (keyword.blog_review_count or 0),
+        place_score=place_score if place_score is not None else keyword.place_score,
         checked_at=datetime.utcnow()
     )
     db.add(history)
@@ -336,9 +329,10 @@ async def refresh_keyword_rank(
         "best_rank": keyword.best_rank,
         "rank_change": rank_change,
         "total_results": rank_result.get("total_results"),
-        "visitor_review_count": visitor_review_count,
-        "blog_review_count": blog_review_count,
-        "place_score": place_score
+        "visitor_review_count": keyword.visitor_review_count or 0,
+        "blog_review_count": keyword.blog_review_count or 0,
+        "place_score": keyword.place_score,
+        "source": rank_result.get("source", "unknown")
     }
 
 
@@ -406,30 +400,25 @@ async def refresh_all_keywords(
     updated = []
     for keyword in keywords:
         try:
-            rank_result = await naver_service.get_place_rank(keyword.place_id, keyword.keyword)
+            rank_result = await naver_service.get_place_rank_light(keyword.place_id, keyword.keyword)
             new_rank = rank_result.get("rank")
 
-            # 분석 결과에서 데이터 추출
-            visitor_review_count = 0
-            blog_review_count = 0
-            place_score = None
-
-            analysis = rank_result.get("analysis")
-            if analysis and analysis.get("target_analysis"):
-                target = analysis["target_analysis"]
-                place_score = target.get("total_score")
-                counts = target.get("counts", {})
-                visitor_review_count = counts.get("visitor_review", 0)
-                blog_review_count = counts.get("blog_review", 0)
+            # 경량 API 결과에서 데이터 추출
+            visitor_review_count = rank_result.get("visitor_review_count", 0)
+            blog_review_count = rank_result.get("blog_review_count", 0)
+            place_score = rank_result.get("place_score")
 
             rank_change = None
             if keyword.last_rank and new_rank:
                 rank_change = keyword.last_rank - new_rank
 
+            # 업데이트 (API 실패로 null/0 데이터가 오면 기존 데이터 유지)
             keyword.last_rank = new_rank
-            keyword.visitor_review_count = visitor_review_count
-            keyword.blog_review_count = blog_review_count
-            keyword.place_score = place_score
+            if visitor_review_count > 0 or blog_review_count > 0:
+                keyword.visitor_review_count = visitor_review_count
+                keyword.blog_review_count = blog_review_count
+            if place_score is not None:
+                keyword.place_score = place_score
             if new_rank and (keyword.best_rank is None or new_rank < keyword.best_rank):
                 keyword.best_rank = new_rank
             keyword.updated_at = datetime.utcnow()
@@ -443,9 +432,9 @@ async def refresh_all_keywords(
                 keyword=keyword.keyword,
                 rank=new_rank,
                 total_results=rank_result.get("total_results"),
-                visitor_review_count=visitor_review_count,
-                blog_review_count=blog_review_count,
-                place_score=place_score,
+                visitor_review_count=visitor_review_count if visitor_review_count > 0 else (keyword.visitor_review_count or 0),
+                blog_review_count=blog_review_count if blog_review_count > 0 else (keyword.blog_review_count or 0),
+                place_score=place_score if place_score is not None else keyword.place_score,
                 checked_at=datetime.utcnow()
             )
             db.add(history)
@@ -455,13 +444,16 @@ async def refresh_all_keywords(
                 "keyword": keyword.keyword,
                 "place_name": keyword.place_name,
                 "current_rank": new_rank,
-                "rank_change": rank_change
+                "rank_change": rank_change,
+                "source": rank_result.get("source", "unknown")
             })
 
         except Exception as e:
+            logger.error(f"순위 갱신 실패 - {keyword.keyword} (place={keyword.place_id}): {e}")
             updated.append({
                 "keyword_id": keyword.id,
                 "keyword": keyword.keyword,
+                "place_name": keyword.place_name,
                 "error": str(e)
             })
 

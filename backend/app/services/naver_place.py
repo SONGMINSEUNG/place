@@ -2482,6 +2482,96 @@ class NaverPlaceService:
 
         return reviews
 
+    async def get_place_rank_light(
+        self,
+        place_id: str,
+        keyword: str,
+    ) -> Dict[str, Any]:
+        """경량 순위 조회 - ADLOG API 사용 (Playwright 불필요)
+
+        Playwright 브라우저 없이 ADLOG httpx API로 순위를 조회합니다.
+        Render 등 브라우저 실행이 어려운 환경에서 안정적으로 동작합니다.
+
+        Args:
+            place_id: 네이버 플레이스 ID
+            keyword: 검색 키워드
+
+        Returns:
+            get_place_rank()와 동일한 형식:
+            {
+                "rank": int | None,
+                "total_results": int,
+                "place_id": str,
+                "visitor_review_count": int,
+                "blog_review_count": int,
+                "save_count": int,
+                "place_score": float | None,
+                "source": "adlog",
+            }
+        """
+        try:
+            # 지연 import (순환 참조 방지)
+            from app.services.adlog_proxy import adlog_service
+
+            data = await adlog_service.fetch_keyword_analysis(keyword)
+            places = data.get("places", [])
+
+            # place_id로 대상 업체 찾기
+            target = None
+            for p in places:
+                if str(p.get("place_id")) == str(place_id):
+                    target = p
+                    break
+
+            if target:
+                metrics = target.get("metrics", {})
+                raw_indices = target.get("raw_indices", {})
+                n3 = raw_indices.get("n3", 0.0)
+
+                return {
+                    "rank": target.get("rank"),
+                    "total_results": data.get("total_count", len(places)),
+                    "place_id": place_id,
+                    "visitor_review_count": metrics.get("visit_count", 0),
+                    "blog_review_count": metrics.get("blog_count", 0),
+                    "save_count": metrics.get("save_count", 0),
+                    "place_score": round(n3, 1) if n3 else None,
+                    "source": "adlog",
+                }
+            else:
+                # 업체가 검색 결과에 없음 (순위권 밖) - 에러가 아님
+                logger.info(
+                    f"get_place_rank_light: place {place_id} not found in "
+                    f"ADLOG results for '{keyword}' ({len(places)} places)"
+                )
+                return {
+                    "rank": None,
+                    "total_results": data.get("total_count", len(places)),
+                    "place_id": place_id,
+                    "visitor_review_count": 0,
+                    "blog_review_count": 0,
+                    "save_count": 0,
+                    "place_score": None,
+                    "source": "adlog",
+                    "not_found": True,
+                }
+
+        except Exception as e:
+            logger.warning(
+                f"get_place_rank_light failed for '{keyword}' (place={place_id}): {e}. "
+                f"Falling back to Playwright-based get_place_rank."
+            )
+            # Playwright 폴백
+            try:
+                result = await self.get_place_rank(place_id, keyword)
+                result["source"] = "playwright_fallback"
+                return result
+            except Exception as fallback_err:
+                logger.error(
+                    f"get_place_rank fallback also failed for '{keyword}': {fallback_err}"
+                )
+                raise fallback_err
+
     async def search_places_light(self, keyword: str, limit: int = 50) -> List[Dict[str, Any]]:
         """경량 업체 검색 - 네이버 공식 OpenAPI 지역 검색 사용
 
