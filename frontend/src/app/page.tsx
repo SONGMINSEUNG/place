@@ -135,6 +135,8 @@ export default function Dashboard() {
   const selectedBusinessRef = useRef<RegisteredBusiness | null>(null);
   const prevBusinessIdRef = useRef<string | null>(null);
   const prevKeywordIdsRef = useRef<string>("");
+  const loadKeywordsInFlightRef = useRef(false);
+  const lastLoadKeywordsTimeRef = useRef(0);
 
   // selectedBusiness 변경 시 ref 동기화
   useEffect(() => {
@@ -159,19 +161,42 @@ export default function Dashboard() {
     }
   }, []);
 
+  // 모든 추적 키워드 로드 (업체 필터 없이)
+  // Deduplication: skip if already in-flight or called within the last 2 seconds (unless forced)
+  const loadAllTrackedKeywords = useCallback(async (force = false) => {
+    const now = Date.now();
+    if (loadKeywordsInFlightRef.current) return;
+    if (!force && now - lastLoadKeywordsTimeRef.current < 2000) return;
+    loadKeywordsInFlightRef.current = true;
+    lastLoadKeywordsTimeRef.current = now;
+    setLoading(true);
+    try {
+      const keywords = await keywordsApi.getAll();
+      setAllTrackedKeywords(keywords);
+    } catch (error) {
+      console.error('키워드 로드 실패:', error);
+    } finally {
+      setLoading(false);
+      loadKeywordsInFlightRef.current = false;
+    }
+  }, []);
+
   // 페이지 마운트 시 데이터 로드 (인증 후)
   useEffect(() => {
     loadLocalStorageData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // 인증 완료 후 키워드 로드
+  // 인증 완료 후 키워드 로드 (user.id로 비교하여 같은 유저의 객체 참조 변경에 재호출 방지)
+  const userId = user?.id;
   useEffect(() => {
-    if (!authLoading && user) {
+    if (!authLoading && userId) {
       loadAllTrackedKeywords();
     }
-  }, [authLoading, user]);
+  }, [authLoading, userId, loadAllTrackedKeywords]);
 
   // 윈도우 포커스 시 데이터 다시 로드 (마운트 시 한 번만 등록)
+  // loadAllTrackedKeywords already has a 2-second cooldown built in
   useEffect(() => {
     const handleFocus = () => {
       loadLocalStorageData();
@@ -179,22 +204,7 @@ export default function Dashboard() {
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 모든 추적 키워드 로드 (업체 필터 없이)
-  const loadAllTrackedKeywords = async () => {
-    setLoading(true);
-    try {
-      const keywords = await keywordsApi.getAll();
-      setAllTrackedKeywords(keywords);
-      // 트렌드 로드는 useEffect에서 selectedBusiness에 맞춰 처리
-    } catch (error) {
-      console.error('키워드 로드 실패:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [loadLocalStorageData, loadAllTrackedKeywords]);
 
   // 최근 조회 키워드 기반으로 트렌드 로드 (추적 키워드 없을 때 초기 로드용)
   // 이 useEffect는 recentSearches가 로드된 직후 한 번만 실행되는 초기 폴백 역할
@@ -435,14 +445,13 @@ export default function Dashboard() {
     } catch (error) {
       console.error('키워드 필터링 에러:', error);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allTrackedKeywords, selectedBusiness]);
 
   const handleRefreshAll = async () => {
     setRefreshing(true);
     try {
       await keywordsApi.refreshAll();
-      await loadAllTrackedKeywords();
+      await loadAllTrackedKeywords(true);
       toast.success('순위 새로고침 완료!');
     } catch (error) {
       toast.error('새로고침 실패');

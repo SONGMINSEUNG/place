@@ -10,11 +10,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.models.place import (
     TrackedPlace, PlaceStats, RankHistory, SavedKeyword,
-    UserActivityLog, AdlogTrainingData
+    UserActivityLog, AdlogTrainingData, Place
 )
 from app.services.naver_place import NaverPlaceService
 
 logger = logging.getLogger(__name__)
+
+
+async def ensure_place_exists(db: AsyncSession, place_id: str, place_name: str = None):
+    """RankHistory 저장 전 places 테이블에 해당 place_id가 존재하는지 확인하고, 없으면 생성"""
+    result = await db.execute(select(Place).where(Place.place_id == place_id))
+    if not result.scalar_one_or_none():
+        new_place = Place(place_id=place_id, name=place_name or "Unknown")
+        db.add(new_place)
+        await db.flush()
+
 
 # 학습 상태 저장 (메모리)
 training_status = {
@@ -245,6 +255,9 @@ class PlaceScheduler:
                                 keyword
                             )
 
+                            # places 테이블에 place 존재 보장 (FK 제약조건)
+                            await ensure_place_exists(db, tracked.place_id, tracked.place_name)
+
                             # 기록 저장
                             rank_history = RankHistory(
                                 place_id=tracked.place_id,
@@ -358,6 +371,9 @@ class PlaceScheduler:
                         if new_rank and (kw.best_rank is None or new_rank < kw.best_rank):
                             kw.best_rank = new_rank
                         kw.updated_at = datetime.now()
+
+                        # places 테이블에 place 존재 보장 (FK 제약조건)
+                        await ensure_place_exists(db, kw.place_id, kw.place_name)
 
                         # 히스토리 저장
                         history = RankHistory(

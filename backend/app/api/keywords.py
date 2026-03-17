@@ -11,6 +11,15 @@ from app.services.naver_place import NaverPlaceService
 router = APIRouter()
 naver_service = NaverPlaceService()
 
+
+async def ensure_place_exists(db: AsyncSession, place_id: str, place_name: str = None):
+    """RankHistory 저장 전 places 테이블에 해당 place_id가 존재하는지 확인하고, 없으면 생성"""
+    result = await db.execute(select(Place).where(Place.place_id == place_id))
+    if not result.scalar_one_or_none():
+        new_place = Place(place_id=place_id, name=place_name or "Unknown")
+        db.add(new_place)
+        await db.flush()
+
 # 임시: 고정 user_id (나중에 로그인 기능 추가 시 제거)
 DEFAULT_USER_ID = 1
 
@@ -123,6 +132,9 @@ async def save_keyword(
     db.add(saved_keyword)
     await db.commit()
     await db.refresh(saved_keyword)
+
+    # places 테이블에 place 존재 보장 (FK 제약조건)
+    await ensure_place_exists(db, place_id, place_name)
 
     # 첫 히스토리 기록 (모든 데이터 포함)
     history = RankHistory(
@@ -299,6 +311,9 @@ async def refresh_keyword_rank(
         keyword.best_rank = new_rank
     keyword.updated_at = datetime.utcnow()
 
+    # places 테이블에 place 존재 보장 (FK 제약조건)
+    await ensure_place_exists(db, keyword.place_id, keyword.place_name)
+
     # 히스토리 저장 (모든 데이터 포함)
     history = RankHistory(
         place_id=keyword.place_id,
@@ -418,6 +433,9 @@ async def refresh_all_keywords(
             if new_rank and (keyword.best_rank is None or new_rank < keyword.best_rank):
                 keyword.best_rank = new_rank
             keyword.updated_at = datetime.utcnow()
+
+            # places 테이블에 place 존재 보장 (FK 제약조건)
+            await ensure_place_exists(db, keyword.place_id, keyword.place_name)
 
             # 히스토리 저장 (모든 데이터 포함)
             history = RankHistory(

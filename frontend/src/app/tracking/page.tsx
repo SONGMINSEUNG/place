@@ -29,11 +29,11 @@ export default function TrackingPage() {
   const [addLoading, setAddLoading] = useState(false);
   const [expandedKeyword, setExpandedKeyword] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [autoRefreshed, setAutoRefreshed] = useState(false);
   const [selectedBusiness, setSelectedBusiness] = useState<RegisteredBusiness | null>(null);
   const [businesses, setBusinesses] = useState<RegisteredBusiness[]>([]);
   const [businessDropdownOpen, setBusinessDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const autoRefreshedRef = useRef(false);
 
   const loadKeywords = useCallback(async () => {
     try {
@@ -74,24 +74,28 @@ export default function TrackingPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Auto-refresh: runs only once after initial keywords load.
+  // Uses a ref flag instead of state to avoid re-triggering the effect.
   useEffect(() => {
-    if (user && !autoRefreshed && keywords.length > 0 && !loading) {
-      const shouldRefresh = keywords.some(kw => {
-        if (!kw.weekly_data || kw.weekly_data.length === 0) return true;
-        const lastDateStr = kw.weekly_data[kw.weekly_data.length - 1]?.date;
-        if (!lastDateStr) return true;
-        // date format is "MM/DD" - compare with today's date string
-        const now = new Date();
-        const todayStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
-        return lastDateStr !== todayStr;
-      });
+    if (autoRefreshedRef.current) return;
+    if (!user || keywords.length === 0 || loading) return;
 
-      if (shouldRefresh) {
-        handleRefreshAll(true);
-        setAutoRefreshed(true);
-      }
+    autoRefreshedRef.current = true;
+
+    const shouldRefresh = keywords.some(kw => {
+      if (!kw.weekly_data || kw.weekly_data.length === 0) return true;
+      const lastDateStr = kw.weekly_data[kw.weekly_data.length - 1]?.date;
+      if (!lastDateStr) return true;
+      const now = new Date();
+      const todayStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
+      return lastDateStr !== todayStr;
+    });
+
+    if (shouldRefresh) {
+      handleRefreshAll(true);
     }
-  }, [user, keywords, loading, autoRefreshed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, loading]);
 
   const handleAddKeyword = async () => {
     if (!newPlaceUrl.trim() || !newKeyword.trim()) {
