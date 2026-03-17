@@ -196,15 +196,24 @@ export default function Dashboard() {
     }
   };
 
-  // 최근 조회 키워드 기반으로 트렌드 로드
+  // 최근 조회 키워드 기반으로 트렌드 로드 (추적 키워드 없을 때 초기 로드용)
+  // 이 useEffect는 recentSearches가 로드된 직후 한 번만 실행되는 초기 폴백 역할
+  const initialFallbackDoneRef = useRef(false);
   useEffect(() => {
-    if (recentSearches.length > 0 && allTrackedKeywords.length === 0) {
+    if (initialFallbackDoneRef.current) return;
+    if (recentSearches.length > 0 && allTrackedKeywords.length === 0 && !loading) {
+      initialFallbackDoneRef.current = true;
       const recentKeywords = [...new Set(recentSearches.slice(0, 5).map(s => s.keyword))];
       if (recentKeywords.length > 0) {
         loadKeywordTrends(recentKeywords);
+        loadRelatedKeywordsFromRecent(recentSearches);
       }
     }
-  }, [recentSearches, allTrackedKeywords]);
+    // allTrackedKeywords가 로드되면 초기 폴백은 불필요
+    if (allTrackedKeywords.length > 0) {
+      initialFallbackDoneRef.current = true;
+    }
+  }, [recentSearches, allTrackedKeywords, loading]);
 
   const loadKeywordTrends = async (keywords: string[]) => {
     // 빈 배열이거나 유효하지 않은 키워드면 스킵
@@ -268,6 +277,51 @@ export default function Dashboard() {
       console.error('트렌드 로드 실패:', error);
     } finally {
       setTrendLoading(false);
+    }
+  };
+
+  // 최근 조회 기반으로 관련 키워드 로드 (추적 키워드가 없을 때 폴백)
+  const loadRelatedKeywordsFromRecent = async (searches: RecentSearch[]) => {
+    if (searches.length === 0) return;
+    setRelatedLoading(true);
+    try {
+      const firstSearch = searches[0];
+      const result = await trendApi.getRelated(
+        firstSearch.keyword,
+        firstSearch.placeName,
+        0,  // 최근 조회에는 리뷰 수 정보가 없으므로 0
+        0,
+        21
+      );
+      if (result?.related_keywords?.length > 0) {
+        const related = result.related_keywords
+          .filter((k: any) => k.keyword !== firstSearch.keyword.replace(/\s/g, ''))
+          .slice(0, 20)
+          .map((k: any) => ({
+            keyword: k.keyword,
+            searchVolume: k.monthly_total,
+            type: 'variation' as const,
+            chance: k.chance,
+            chanceDesc: k.chance_desc,
+            chanceColor: k.chance_color,
+            competition: k.competition,
+            avgVisitor: k.avg_visitor,
+            avgBlog: k.avg_blog,
+            avgTotal: k.avg_total,
+            myVisitor: k.my_visitor,
+            myBlog: k.my_blog,
+            myTotal: k.my_total,
+            visitorRatio: k.visitor_ratio,
+            blogRatio: k.blog_ratio,
+            competitiveness: k.competitiveness,
+            top3: k.top3
+          }));
+        setRelatedKeywords(related);
+      }
+    } catch (error) {
+      console.error('최근 조회 기반 관련 키워드 로드 실패:', error);
+    } finally {
+      setRelatedLoading(false);
     }
   };
 
@@ -356,9 +410,21 @@ export default function Dashboard() {
         const keywordNames = filteredKeywords.slice(0, 5).map(k => k.keyword);
         loadKeywordTrends(keywordNames).catch(console.error);
       } else {
-        // 선택된 업체에 키워드가 없으면 모두 비움
-        setRelatedKeywords([]);
-        setKeywordTrends([]);
+        // 추적 키워드가 없으면 localStorage의 최근 조회로 폴백
+        const savedSearches = localStorage.getItem('recentSearches');
+        const fallbackSearches: RecentSearch[] = savedSearches ? JSON.parse(savedSearches) : [];
+
+        if (fallbackSearches.length > 0) {
+          const recentKeywords = [...new Set(fallbackSearches.slice(0, 5).map(s => s.keyword))];
+          if (recentKeywords.length > 0) {
+            loadKeywordTrends(recentKeywords).catch(console.error);
+          }
+          loadRelatedKeywordsFromRecent(fallbackSearches).catch(console.error);
+        } else {
+          // 최근 조회도 없으면 비움
+          setRelatedKeywords([]);
+          setKeywordTrends([]);
+        }
       }
     } catch (error) {
       console.error('키워드 필터링 에러:', error);
@@ -416,9 +482,18 @@ export default function Dashboard() {
     : allTrackedKeywords;
 
   // 1위 근접 키워드 (10위 이내) - 선택된 업체 기준
-  const nearFirstKeywords = trackedKeywords.filter(k =>
+  // 추적 키워드가 없으면 최근 조회에서 순위 2~10위인 것을 폴백으로 사용
+  const nearFirstKeywordsFromTracked = trackedKeywords.filter(k =>
     k.last_rank && k.last_rank > 1 && k.last_rank <= 10
   );
+  const nearFirstKeywordsFromRecent = trackedKeywords.length === 0
+    ? recentSearches
+        .filter(s => s.rank && s.rank > 1 && s.rank <= 10)
+        .filter((s, idx, arr) => arr.findIndex(a => a.keyword === s.keyword && a.placeId === s.placeId) === idx)
+    : [];
+  const nearFirstKeywords = nearFirstKeywordsFromTracked.length > 0
+    ? nearFirstKeywordsFromTracked
+    : nearFirstKeywordsFromRecent;
 
   // 순위 상승 키워드 - 선택된 업체 기준
   const risingKeywords = trackedKeywords.filter(k => {
@@ -740,27 +815,33 @@ export default function Dashboard() {
 
         {nearFirstKeywords.length > 0 ? (
           <div className="opportunity-grid" style={{ display: 'grid', gap: '16px' }}>
-            {nearFirstKeywords.slice(0, 6).map((kw) => {
-              const trend = keywordTrends.find(t => t.keyword === kw.keyword);
+            {nearFirstKeywords.slice(0, 6).map((kw: any, idx: number) => {
+              // SavedKeyword인지 RecentSearch인지에 따라 필드명 분기
+              const isTracked = 'id' in kw;
+              const keyword = kw.keyword;
+              const placeId = isTracked ? kw.place_id : kw.placeId;
+              const placeName = isTracked ? kw.place_name : kw.placeName;
+              const rank = isTracked ? kw.last_rank : kw.rank;
+              const trend = keywordTrends.find(t => t.keyword === keyword);
               return (
                 <div
-                  key={kw.id}
-                  onClick={() => router.push(`/inquiry?placeId=${kw.place_id}&keyword=${encodeURIComponent(kw.keyword)}`)}
+                  key={isTracked ? kw.id : `recent-${idx}`}
+                  onClick={() => router.push(`/inquiry?placeId=${placeId}&keyword=${encodeURIComponent(keyword)}`)}
                   style={{
                     padding: '16px', borderRadius: '12px', background: '#fffbeb',
                     border: '1px solid #fde68a', cursor: 'pointer'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontWeight: '600', color: '#1e293b' }}>{kw.keyword}</span>
-                    <span style={{ ...getRankBadgeStyle(kw.last_rank), padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '600' }}>
-                      {kw.last_rank}위
+                    <span style={{ fontWeight: '600', color: '#1e293b' }}>{keyword}</span>
+                    <span style={{ ...getRankBadgeStyle(rank), padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '600' }}>
+                      {rank}위
                     </span>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>{kw.place_name}</div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>{placeName}</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: '13px', color: '#92400e' }}>
-                      1위까지 {(kw.last_rank || 1) - 1}단계
+                      1위까지 {(rank || 1) - 1}단계
                     </span>
                     {trend?.monthlyVolume && (
                       <span style={{ fontSize: '12px', color: '#64748b' }}>

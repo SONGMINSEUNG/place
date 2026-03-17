@@ -59,9 +59,9 @@ class UserDataInput(BaseModel):
 
 class ScoresResponse(BaseModel):
     """점수 응답 (소수점 4자리)"""
-    quality_score: float = Field(..., description="품질점수 (N2 기반)")
-    keyword_score: float = Field(..., description="키워드지수 (N1 기반)")
-    competition_score: float = Field(..., description="종합경쟁력 (N3 기반)")
+    quality_score: float = Field(..., description="품질 점수")
+    keyword_score: float = Field(..., description="키워드 지수")
+    competition_score: float = Field(..., description="종합 경쟁력")
 
 
 class MetricsResponse(BaseModel):
@@ -89,8 +89,8 @@ class PlaceResponse(BaseModel):
 
 class ComparisonResponse(BaseModel):
     """비교 분석 응답"""
-    rank_1_gap: float = Field(..., description="1위와 경쟁력점수(N3) 차이")
-    rank_1_score: float = Field(..., description="1위 경쟁력점수(N3)")
+    rank_1_gap: float = Field(..., description="1위와 종합 경쟁력 차이")
+    rank_1_score: float = Field(..., description="1위 종합 경쟁력")
 
 
 class RecommendationItem(BaseModel):
@@ -98,9 +98,9 @@ class RecommendationItem(BaseModel):
     type: str = Field(..., description="유입수, 예약수, 블로그리뷰, 방문자리뷰")
     amount: int = Field(..., description="추천 개수")
     unit: str = Field(..., description="단위 (명, 건, 개)")
-    effect: float = Field(..., description="예상 N2 점수 증가")
-    description: Optional[str] = Field(None, description="N3 상승 효과 설명")
-    n3_effect: Optional[float] = Field(None, description="예상 N3 점수 증가")
+    effect: float = Field(..., description="예상 품질 점수 증가")
+    description: Optional[str] = Field(None, description="종합 경쟁력 상승 효과 설명")
+    n3_effect: Optional[float] = Field(None, description="예상 종합 경쟁력 증가")
 
 
 class CompetitorResponse(BaseModel):
@@ -129,16 +129,16 @@ class SimulateEffectItem(BaseModel):
 
 class SimulateResponse(BaseModel):
     """시뮬레이션 결과 응답"""
-    current_score: float = Field(..., description="현재 품질점수 (N2)")
+    current_score: float = Field(..., description="현재 품질 점수")
     current_rank: int
     effects: Dict[str, SimulateEffectItem]
-    total_effect: float = Field(..., description="N2 변화량")
-    predicted_score: float = Field(..., description="예상 품질점수 (N2)")
+    total_effect: float = Field(..., description="품질 점수 변화량")
+    predicted_score: float = Field(..., description="예상 품질 점수")
     predicted_rank: int
     # N3 관련 필드 추가
-    current_n3: Optional[float] = Field(None, description="현재 경쟁력점수 (N3)")
-    predicted_n3: Optional[float] = Field(None, description="예상 경쟁력점수 (N3)")
-    n3_change: Optional[float] = Field(None, description="N3 변화량 (순위 결정 핵심 지표)")
+    current_n3: Optional[float] = Field(None, description="현재 종합 경쟁력")
+    predicted_n3: Optional[float] = Field(None, description="예상 종합 경쟁력")
+    n3_change: Optional[float] = Field(None, description="종합 경쟁력 변화량 (순위 결정 핵심 지표)")
 
 
 # ===========================================

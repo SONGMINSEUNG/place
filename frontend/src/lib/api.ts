@@ -802,7 +802,7 @@ export const authApi = {
 };
 
 // ===========================================
-// 분석 API (ADLOG 기반)
+// 분석 API
 // ===========================================
 
 export interface AnalyzeScores {
@@ -856,7 +856,7 @@ export interface AnalyzeResponse {
   recommendations: AnalyzeRecommendation[];
   competitors: AnalyzeCompetitor[];
   all_places: AnalyzePlace[];
-  data_source?: 'api' | 'cache';  // api: ADLOG API, cache: 네이버 크롤링 + 자체 계산
+  data_source?: 'api' | 'cache';  // api: 분석 API, cache: 네이버 크롤링 + 자체 계산
 }
 
 export interface SimulateInputs {

@@ -153,7 +153,7 @@ function InquiryPageContent() {
     }
   };
 
-  // 자동 순위 조회 함수 (ADLOG API 사용)
+  // 자동 순위 조회 함수 (분석 API 사용)
   const autoRankSearch = async (place: SearchResult, keyword: string, traffic: string) => {
     setLoading(true);
     try {
@@ -161,7 +161,7 @@ function InquiryPageContent() {
 
       setUserTrafficCount(trafficNum || null);
 
-      // ADLOG API 호출 (정규화된 점수 반환)
+      // 분석 API 호출 (정규화된 점수 반환)
       const analyzeData = await analyzeApi.analyze(
         keyword,
         place.name,
@@ -228,7 +228,7 @@ function InquiryPageContent() {
     setSearchResults([]);
   };
 
-  // 순위 조회 함수 (ADLOG API 사용)
+  // 순위 조회 함수 (분석 API 사용)
   const handleRankSearch = async () => {
     if (!selectedPlace || !keywords.trim()) {
       toast.error("업체와 키워드를 입력해주세요");
@@ -240,7 +240,7 @@ function InquiryPageContent() {
 
       setUserTrafficCount(trafficNum || null);
 
-      // ADLOG API 호출 (정규화된 점수 반환)
+      // 분석 API 호출 (정규화된 점수 반환)
       const analyzeData = await analyzeApi.analyze(
         keywords.trim(),
         selectedPlace.name,
@@ -693,7 +693,7 @@ function InquiryPageContent() {
     );
   }
 
-  // 결과 화면 (ADLOG 정규화 점수 기반)
+  // 결과 화면 (정규화 점수 기반)
   const myPlace = analyzeResult.my_place;
   const comparison = analyzeResult.comparison;
   const competitors = analyzeResult.competitors || [];
@@ -730,7 +730,7 @@ function InquiryPageContent() {
               <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Target style={{ width: '20px', height: '20px', color: '#3b82f6' }} />
               </div>
-              <span style={{ fontSize: '14px', color: '#64748b' }}>품질점수 (N2 정규화)</span>
+              <span style={{ fontSize: '14px', color: '#64748b' }}>품질 점수</span>
             </div>
             <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#3b82f6' }}>{myPlace.scores.quality_score.toFixed(2)}</span>
             <span style={{ fontSize: '12px', color: '#94a3b8', marginLeft: '4px' }}>/ 100</span>
@@ -751,25 +751,25 @@ function InquiryPageContent() {
               <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Zap style={{ width: '20px', height: '20px', color: '#f59e0b' }} />
               </div>
-              <span style={{ fontSize: '14px', color: '#64748b' }}>경쟁력 (N3)</span>
+              <span style={{ fontSize: '14px', color: '#64748b' }}>종합 경쟁력</span>
             </div>
             <span style={{ fontSize: '28px', fontWeight: 'bold', color: '#f59e0b' }}>{myPlace.scores.competition_score.toFixed(1)}</span>
           </div>
         </div>
       )}
 
-      {/* 3가지 지표 (N1, N2, N3 정규화 점수) */}
+      {/* 3가지 지표 (정규화 점수) */}
       {myPlace && (
         <div style={{ ...styles.card, marginBottom: '24px' }}>
           <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <BarChart3 style={{ width: '18px', height: '18px', color: '#6366f1' }} />
             분석 지표 (0-100 정규화)
           </h3>
-          <div className="adlog-scores-grid" style={{ display: 'grid', gap: '16px' }}>
+          <div className="scores-grid" style={{ display: 'grid', gap: '16px' }}>
             <div style={{ padding: '16px', background: '#f0f9ff', borderRadius: '12px', border: '1px solid #bae6fd' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <Activity style={{ width: '16px', height: '16px', color: '#0284c7' }} />
-                <span style={{ fontSize: '14px', fontWeight: '500', color: '#0c4a6e' }}>키워드 지수 (N1)</span>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: '#0c4a6e' }}>키워드 지수</span>
               </div>
               <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0284c7' }}>{myPlace.scores.keyword_score.toFixed(2)}</div>
               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>키워드와의 관련성</div>
@@ -777,7 +777,7 @@ function InquiryPageContent() {
             <div style={{ padding: '16px', background: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <Target style={{ width: '16px', height: '16px', color: '#16a34a' }} />
-                <span style={{ fontSize: '14px', fontWeight: '500', color: '#14532d' }}>품질 점수 (N2)</span>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: '#14532d' }}>품질 점수</span>
               </div>
               <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#16a34a' }}>{myPlace.scores.quality_score.toFixed(2)}</div>
               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>리뷰, 저장수 등 품질</div>
@@ -785,10 +785,10 @@ function InquiryPageContent() {
             <div style={{ padding: '16px', background: '#fefce8', borderRadius: '12px', border: '1px solid #fef08a' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <Zap style={{ width: '16px', height: '16px', color: '#ca8a04' }} />
-                <span style={{ fontSize: '14px', fontWeight: '500', color: '#713f12' }}>종합 경쟁력 (N3)</span>
+                <span style={{ fontSize: '14px', fontWeight: '500', color: '#713f12' }}>종합 경쟁력</span>
               </div>
               <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ca8a04' }}>{myPlace.scores.competition_score.toFixed(2)}</div>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>N1 + N2 종합 점수</div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>키워드 + 품질 종합 점수</div>
             </div>
           </div>
         </div>
@@ -831,9 +831,9 @@ function InquiryPageContent() {
                 <tr style={{ background: '#f1f5f9' }}>
                   <th style={{ padding: '12px 12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>순위</th>
                   <th style={{ padding: '12px 12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>업체명</th>
-                  <th style={{ padding: '12px 12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#0284c7' }}>N1 (키워드)</th>
-                  <th style={{ padding: '12px 12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#16a34a' }}>N2 (품질)</th>
-                  <th style={{ padding: '12px 12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#ca8a04' }}>N3 (경쟁력)</th>
+                  <th style={{ padding: '12px 12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#0284c7' }}>키워드 지수</th>
+                  <th style={{ padding: '12px 12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#16a34a' }}>품질 점수</th>
+                  <th style={{ padding: '12px 12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#ca8a04' }}>종합 경쟁력</th>
                   <th style={{ padding: '12px 12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>방문리뷰</th>
                   <th style={{ padding: '12px 12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>블로그</th>
                   <th style={{ padding: '12px 12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>저장수</th>
@@ -880,8 +880,8 @@ function InquiryPageContent() {
             </table>
           </div>
           <div style={{ marginTop: '12px', padding: '12px', background: '#f1f5f9', borderRadius: '8px', fontSize: '12px', color: '#64748b' }}>
-            <strong>지표 설명:</strong> N1=키워드 관련성, N2=품질(리뷰/저장 등), N3=종합 경쟁력. 모든 점수는 0-100 정규화.<br />
-            <strong>데이터:</strong> {analyzeResult?.data_source === 'cache' ? '✅ 캐시 파라미터 사용' : '🔄 ADLOG 파라미터 추출 (최초 1회)'}
+            <strong>지표 설명:</strong> 키워드 지수=키워드 관련성, 품질 점수=리뷰/저장 등, 종합 경쟁력=순위 결정 핵심. 모든 점수는 0-100 정규화.<br />
+            <strong>데이터:</strong> {analyzeResult?.data_source === 'cache' ? '✅ 캐시 파라미터 사용' : '🔄 파라미터 추출 (최초 1회)'}
           </div>
         </div>
       )}
@@ -985,19 +985,19 @@ function InquiryPageContent() {
                 </div>
               </div>
 
-              {/* N2 점수 변화 */}
+              {/* 품질 점수 변화 */}
               <div style={{ marginBottom: '16px', padding: '16px', background: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                   <Target style={{ width: '18px', height: '18px', color: '#16a34a' }} />
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#14532d' }}>품질점수 (N2) 변화 필요</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#14532d' }}>품질 점수 변화 필요</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', textAlign: 'center' }}>
                   <div>
-                    <div style={{ fontSize: '11px', color: '#14532d', marginBottom: '4px' }}>현재 N2</div>
+                    <div style={{ fontSize: '11px', color: '#14532d', marginBottom: '4px' }}>현재 품질</div>
                     <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#166534' }}>{targetSimResult.n2_change.current.toFixed(2)}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: '11px', color: '#14532d', marginBottom: '4px' }}>목표 N2</div>
+                    <div style={{ fontSize: '11px', color: '#14532d', marginBottom: '4px' }}>목표 품질</div>
                     <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#166534' }}>{targetSimResult.n2_change.target.toFixed(2)}</div>
                   </div>
                   <div>
@@ -1009,19 +1009,19 @@ function InquiryPageContent() {
                 </div>
               </div>
 
-              {/* N3 점수 변화 */}
+              {/* 종합 경쟁력 변화 */}
               <div style={{ marginBottom: '16px', padding: '16px', background: 'linear-gradient(135deg, #fef3c7, #fde68a)', borderRadius: '12px', border: '1px solid #fcd34d' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                   <Zap style={{ width: '18px', height: '18px', color: '#ca8a04' }} />
-                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#92400e' }}>경쟁력점수 (N3) 예상 변화</span>
+                  <span style={{ fontSize: '14px', fontWeight: '600', color: '#92400e' }}>종합 경쟁력 예상 변화</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', textAlign: 'center' }}>
                   <div>
-                    <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>현재 N3</div>
+                    <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>현재 경쟁력</div>
                     <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#78350f' }}>{targetSimResult.n3_change.current.toFixed(2)}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>예상 N3</div>
+                    <div style={{ fontSize: '11px', color: '#92400e', marginBottom: '4px' }}>예상 경쟁력</div>
                     <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#78350f' }}>{targetSimResult.n3_change.target.toFixed(2)}</div>
                   </div>
                   <div>
@@ -1072,7 +1072,7 @@ function InquiryPageContent() {
           grid-template-columns: repeat(4, 1fr);
         }
 
-        .adlog-scores-grid {
+        .scores-grid {
           grid-template-columns: repeat(3, 1fr);
         }
 
@@ -1104,7 +1104,7 @@ function InquiryPageContent() {
             grid-template-columns: repeat(2, 1fr);
           }
 
-          .adlog-scores-grid {
+          .scores-grid {
             grid-template-columns: repeat(3, 1fr);
           }
 
@@ -1126,7 +1126,7 @@ function InquiryPageContent() {
             grid-template-columns: 1fr;
           }
 
-          .adlog-scores-grid {
+          .scores-grid {
             grid-template-columns: 1fr;
           }
 

@@ -482,6 +482,17 @@ class AdlogProxyService:
                     await self._proxy_rotator.mark_failed(proxy_url, "unknown")
                 continue
 
+        # 모든 프록시 실패 후, 직접 연결 한 번 시도
+        if "direct" not in tried_proxies:
+            try:
+                logger.info("All proxies failed, trying direct connection as last resort")
+                result = await self._call_api_with_proxy(keyword, None, "direct-fallback")
+                await self._cache.set(cache_key, result, ttl=86400)
+                return result
+            except Exception as e:
+                logger.error(f"Direct connection also failed: {e}")
+                last_error = e
+
         # 모든 프록시 실패
         available_proxies = self._proxy_rotator.get_available_proxies()
         if not available_proxies:

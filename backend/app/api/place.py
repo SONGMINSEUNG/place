@@ -149,8 +149,12 @@ async def search_places(
     keyword: str = Query(..., min_length=2, description="검색 키워드"),
     limit: int = Query(50, ge=1, le=300, description="결과 개수")
 ):
-    """키워드로 플레이스 검색 (경량 API - aiohttp 직접 호출)"""
+    """키워드로 플레이스 검색 (경량 API 우선, 실패 시 크롤링 fallback)"""
+    # 1차: 경량 API 시도
     results = await naver_service.search_places_light(keyword, limit)
+    # 2차: 실패하면 기존 크롤링 fallback
+    if not results:
+        results = await naver_service.search_places(keyword, limit)
     return {
         "keyword": keyword,
         "total": len(results),
@@ -991,14 +995,14 @@ class HiddenScoreRequest(BaseModel):
 @router.post("/hidden-score")
 async def get_hidden_score(request: HiddenScoreRequest):
     """
-    플레이스 히든 지수 분석 (N1, N2, N3)
+    플레이스 히든 지수 분석 (키워드 지수, 품질 점수, 종합 경쟁력)
 
-    adlog.kr과 동일한 히든 지수 정보를 제공하며,
+    히든 지수 정보를 제공하며,
     AI 기반 분석 인사이트를 추가로 제공합니다.
 
-    - N1: 인기도 지수 (리뷰, 저장 등)
-    - N2: 관련성 지수 (키워드 매칭, 정보 완성도)
-    - N3: 랭킹 지수 (키워드 순위 기반)
+    - 키워드 지수: 키워드 관련성 지표
+    - 품질 점수: 리뷰, 저장 등 품질 지표
+    - 종합 경쟁력: 순위 결정 핵심 지표
     """
     place_id = naver_service.extract_place_id(request.place_url)
     if not place_id:
@@ -1083,7 +1087,7 @@ async def get_hidden_scores_batch(
     """
     여러 플레이스 히든 지수 일괄 조회
 
-    adlog.kr처럼 여러 플레이스의 N1, N2, N3 점수를 한번에 조회합니다.
+    여러 플레이스의 키워드 지수, 품질 점수, 종합 경쟁력을 한번에 조회합니다.
     """
     ids = [pid.strip() for pid in place_ids.split(",") if pid.strip()]
 
@@ -1682,7 +1686,7 @@ async def get_keyword_rank_trend(
     키워드 순위 추세 분석
 
     1일전, 15일전, 20일전, 25일전, 30일전 순위를 한눈에 비교합니다.
-    adlog.kr 추세 분석과 동일한 기능입니다.
+    추세 분석 기능입니다.
     """
     # 비교할 기간들
     periods = [1, 15, 20, 25, 30]
@@ -1948,7 +1952,7 @@ async def get_hidden_keywords_with_ranks(
     """
     히든 키워드 + 일별 순위 테이블
 
-    adlog.kr의 히든 키워드 페이지와 동일한 형태로
+    히든 키워드 페이지와 동일한 형태로
     발굴된 키워드들의 일별 순위를 테이블 형태로 제공합니다.
     """
     # 플레이스 정보 조회
@@ -2087,10 +2091,10 @@ async def analyze_places_by_name(
     max_results: int = Query(50, ge=10, le=100, description="최대 검색 결과 수")
 ):
     """
-    플레이스명(브랜드명) 분석 - adlog.kr의 NA 플레이스 키워드 분석과 동일
+    플레이스명(브랜드명) 분석 - 플레이스 키워드 분석
 
     플레이스명을 검색하여 해당 이름을 가진 모든 지점들의:
-    - N1, N2, N3 히든 지수
+    - 키워드 지수, 품질 점수, 종합 경쟁력 히든 지수
     - 방문자 리뷰수, 블로그 리뷰수, 저장수
     - 대표 키워드
     를 한눈에 비교 분석합니다.
@@ -2368,7 +2372,7 @@ async def create_save_tracker(
     플레이스 저장 체크 등록
 
     플레이스 URL과 키워드를 등록하여 저장수 변화를 추적합니다.
-    adlog.kr의 '플레이스 저장 체크' 기능과 동일합니다.
+    '플레이스 저장 체크' 기능입니다.
     """
     # place_id 추출
     place_id = naver_service.extract_place_id(request.place_url)
